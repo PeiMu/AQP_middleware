@@ -16,7 +16,7 @@ DuckDBAdapter::DuckDBAdapter(const std::string &db_path) {
 
 DuckDBAdapter::~DuckDBAdapter() { CleanUp(); }
 
-void *DuckDBAdapter::ParseSQL(const std::string &sql) {
+void DuckDBAdapter::ParseSQL(const std::string &sql) {
   auto context = GetClientContext();
 
   // Begin transaction if in auto-commit mode
@@ -45,10 +45,9 @@ void *DuckDBAdapter::ParseSQL(const std::string &sql) {
   std::cout << "[DuckDB] Logical plan created!" << std::endl;
 
   plan = std::move(planner->plan);
-  return static_cast<void *>(plan.get());
 }
 
-void *DuckDBAdapter::PreOptimizePlan() {
+void DuckDBAdapter::PreOptimizePlan() {
   auto context = GetClientContext();
 
   if (!plan) {
@@ -58,7 +57,7 @@ void *DuckDBAdapter::PreOptimizePlan() {
   // Check if optimization is enabled and required
   if (!plan->RequireOptimizer()) {
     std::cout << "[DuckDB] Plan does not require optimization" << std::endl;
-    return static_cast<void *>(plan.get());
+    return;
   }
 
   // Begin transaction if in auto-commit mode
@@ -81,11 +80,9 @@ void *DuckDBAdapter::PreOptimizePlan() {
   if (context->transaction.IsAutoCommit()) {
     context->transaction.Commit();
   }
-
-  return static_cast<void *>(plan.get());
 }
 
-void *DuckDBAdapter::PostOptimizePlan() {
+void DuckDBAdapter::PostOptimizePlan() {
   auto context = GetClientContext();
 
   if (!plan) {
@@ -95,7 +92,7 @@ void *DuckDBAdapter::PostOptimizePlan() {
   // Check if optimization is enabled and required
   if (!plan->RequireOptimizer()) {
     std::cout << "[DuckDB] Plan does not require optimization" << std::endl;
-    return static_cast<void *>(plan.get());
+    return;
   }
 
   // Begin transaction if in auto-commit mode
@@ -119,6 +116,10 @@ void *DuckDBAdapter::PostOptimizePlan() {
     context->transaction.Commit();
   }
 
+  return;
+}
+
+void *DuckDBAdapter::GetLogicalPlan() {
   return static_cast<void *>(plan.get());
 }
 

@@ -27,13 +27,13 @@ public:
   virtual ~DBAdapter() = default;
 
   // Parse SQL and return logical plan
-  virtual void *ParseSQL(const std::string &sql) = 0;
+  virtual void ParseSQL(const std::string &sql) = 0;
 
   // Convert logical plan to IR
   virtual std::unique_ptr<ir_sql_converter::SimplestStmt> ConvertPlanToIR() = 0;
 
   // Convert IR to SQL
-  std::string GetSQL(ir_sql_converter::SimplestStmt &simplest_stmt,
+  std::string GenerateSQL(ir_sql_converter::SimplestStmt &simplest_stmt,
                      int query_id, bool save_file = false,
                      const std::string &sql_path = "") {
     auto sql = ir_sql_converter::ConvertIRToSQL(simplest_stmt, query_id,

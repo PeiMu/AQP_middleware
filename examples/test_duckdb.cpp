@@ -15,20 +15,26 @@ int main() {
     // Parse SQL
     std::ifstream sql_file(
         "/home/pei/Project/benchmarks/imdb_job-postgres/queries/6d.sql");
+    if (!sql_file.is_open()) {
+      std::cerr << "Failed to open SQL file" << std::endl;
+      return 1;
+    }
     std::stringstream buffer;
     buffer << sql_file.rdbuf();
     std::string sql = buffer.str();
-    void *plan_ptr = adapter->ParseSQL(sql);
+    adapter->ParseSQL(sql);
 
     // Cast to LogicalOperator
-    auto *logical_plan = static_cast<duckdb::LogicalOperator *>(plan_ptr);
+    auto *logical_plan =
+        static_cast<duckdb::LogicalOperator *>(adapter->GetLogicalPlan());
     std::cout << "\n=== Init Logical Plan ===" << std::endl;
     logical_plan->Print();
     std::cout << "===================\n" << std::endl;
 
     // Pre optimizer
+    adapter->PreOptimizePlan();
     logical_plan =
-        static_cast<duckdb::LogicalOperator *>(adapter->PreOptimizePlan());
+        static_cast<duckdb::LogicalOperator *>(adapter->GetLogicalPlan());
     std::cout << "\n=== Logical Plan After Pre Optimizer ===" << std::endl;
     logical_plan->Print();
     std::cout << "===================\n" << std::endl;
@@ -40,7 +46,7 @@ int main() {
     std::cout << "===================\n" << std::endl;
 
     // Convert IR to SQL
-    sql = adapter->GetSQL(*simplest_ir, 1);
+    sql = adapter->GenerateSQL(*simplest_ir, 1);
     std::cout << "\n=== Generated SQL ===" << std::endl;
     std::cout << sql << std::endl;
     std::cout << "===================\n" << std::endl;

@@ -33,25 +33,26 @@ if(EXISTS ${DUCKDB_ROOT})
         target_link_libraries(test_duckdb PRIVATE duckdb_adapter)
 
         message(STATUS "DuckDB adapter: ENABLED")
+    else()
+        message(WARNING "DUCKDB_LIB not found")
     endif()
 else()
-    message(WARNING "DuckDB source not found at ${IR_CONVERTER_ROOT}")
+    message(WARNING "DuckDB source not found")
 endif()
 
 # PostgreSQL
-set(POSTGRES_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../PostgreSQL-12.3" CACHE PATH "PostgreSQL source path")
+set(POSTGRES_ROOT "/home/pei/Project/project_bins" CACHE PATH "PostgreSQL lib/inc path")
 set(HAVE_POSTGRES FALSE)
 if(EXISTS ${POSTGRES_ROOT})
-    message(STATUS "Found PostgreSQL source at: ${POSTGRES_ROOT}")
+    message(STATUS "Found PostgreSQL lib/inc at: ${POSTGRES_ROOT}")
 
     include_directories(
-            ${POSTGRES_ROOT}/src/include
-            ${POSTGRES_ROOT}/src/interfaces/libpq)
+            ${POSTGRES_ROOT}/include)
 
     # Find libpq library (check custom build and system locations)
     find_library(LIBPQ_LIB
             NAMES pq libpq
-            PATHS ${POSTGRES_ROOT}/src/interfaces/libpq ${POSTGRES_ROOT}/lib
+            PATHS ${POSTGRES_ROOT}/lib
             NO_DEFAULT_PATH
     )
 
@@ -59,9 +60,7 @@ if(EXISTS ${POSTGRES_ROOT})
         set(HAVE_POSTGRES TRUE)
         add_library(postgres_adapter STATIC src/adapters/postgres_adapter.cpp)
         target_include_directories(postgres_adapter PUBLIC
-                ${CMAKE_CURRENT_SOURCE_DIR}/include
-                ${POSTGRES_ROOT}/src/include
-                ${POSTGRES_ROOT}/src/interfaces/libpq
+                ${POSTGRES_ROOT}/include
         )
 
         target_link_libraries(postgres_adapter PUBLIC ${LIBPQ_LIB})
@@ -70,10 +69,36 @@ if(EXISTS ${POSTGRES_ROOT})
         target_link_libraries(test_postgres PRIVATE postgres_adapter)
 
         message(STATUS "PostgreSQL adapter: ENABLED")
+    else()
+        message(WARNING "LIBPQ_LIB not found")
     endif ()
 else()
-    message(WARNING "PostgreSQL source not found at ${IR_CONVERTER_ROOT}")
+    message(WARNING "PostgreSQL source not found")
 endif()
+
+# libpg_query
+set(LIBPG_QUERY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../libpg_query" CACHE PATH "libpg_query source path")
+if(EXISTS ${LIBPG_QUERY_ROOT})
+    message(STATUS "Found libpg_query at: ${LIBPG_QUERY_ROOT}")
+
+    include_directories(${LIBPG_QUERY_ROOT})
+
+    find_library(LIBPG_QUERY_LIB
+            NAMES pg_query libpg_query
+            PATHS ${LIBPG_QUERY_ROOT}
+            NO_DEFAULT_PATH
+    )
+
+    if(LIBPG_QUERY_LIB AND HAVE_POSTGRES)
+        target_link_libraries(postgres_adapter PUBLIC ${LIBPG_QUERY_LIB})
+        message(STATUS "libpg_query: ENABLED")
+    else()
+        message(WARNING "LIBPG_QUERY_LIB not found or not have PostgreSQL")
+    endif()
+else()
+    message(WARNING "libpg_query not found at ${LIBPG_QUERY_ROOT}")
+endif()
+
 
 # IR_SQL_Converter
 set(IR_CONVERTER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../IR_SQL_Converter" CACHE PATH "IR_SQL_Converter source path")

@@ -27,8 +27,6 @@
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/storage/data_table.hpp"
 
-#include "duckdb_plan_to_ir.h"
-
 namespace duckdb {
 class DuckDB;
 class Connection;
@@ -45,11 +43,13 @@ public:
   ~DuckDBAdapter() override;
 
   // Parse SQL and return logical plan
-  void *ParseSQL(const std::string &sql) override;
+  void ParseSQL(const std::string &sql) override;
 
   // Optimizer
-  void *PreOptimizePlan();
-  void *PostOptimizePlan();
+  void PreOptimizePlan();
+  void PostOptimizePlan();
+
+  void *GetLogicalPlan();
 
   // Convert logical plan to IR
   std::unique_ptr<ir_sql_converter::SimplestStmt> ConvertPlanToIR() override;
