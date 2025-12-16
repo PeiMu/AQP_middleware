@@ -42,8 +42,6 @@ void DuckDBAdapter::ParseSQL(const std::string &sql) {
     throw std::runtime_error("Failed to create logical plan");
   }
 
-  std::cout << "[DuckDB] Logical plan created!" << std::endl;
-
   plan = std::move(planner->plan);
 }
 

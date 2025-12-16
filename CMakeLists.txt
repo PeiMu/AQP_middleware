@@ -21,7 +21,7 @@ if(EXISTS ${DUCKDB_ROOT})
 
     if(DUCKDB_LIB)
         set(HAVE_DUCKDB TRUE)
-        add_library(duckdb_adapter STATIC src/adapters/duckdb_adapter.cpp)
+        add_library(duckdb_adapter STATIC src/adapters/duckdb_adapter.cpp src/util.cpp)
         target_include_directories(duckdb_adapter PUBLIC
                 ${CMAKE_CURRENT_SOURCE_DIR}/include
                 ${DUCKDB_ROOT}/src/include
@@ -58,7 +58,7 @@ if(EXISTS ${POSTGRES_ROOT})
 
     if(LIBPQ_LIB)
         set(HAVE_POSTGRES TRUE)
-        add_library(postgres_adapter STATIC src/adapters/postgres_adapter.cpp)
+        add_library(postgres_adapter STATIC src/adapters/postgres_adapter.cpp src/util.cpp)
         target_include_directories(postgres_adapter PUBLIC
                 ${POSTGRES_ROOT}/include
         )
