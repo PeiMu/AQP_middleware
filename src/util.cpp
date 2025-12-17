@@ -50,4 +50,4 @@ std::string get_filename(const std::string &path) {
   }
   return path;
 }
-}
+} // namespace middleware
