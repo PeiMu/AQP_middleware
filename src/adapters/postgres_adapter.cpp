@@ -2,7 +2,7 @@
  * PostgreSQL adapter for binding IR to the PostgreSQL engine
  * */
 
-#include "postgres_adapter.h"
+#include "adapters/postgres_adapter.h"
 
 namespace middleware {
 

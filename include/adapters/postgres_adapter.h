@@ -17,7 +17,7 @@
 
 #include <libpq-fe.h>
 
-#include "db_adapter.h"
+#include "adapters/db_adapter.h"
 #include "pg_query.h"
 
 using json = nlohmann::json;

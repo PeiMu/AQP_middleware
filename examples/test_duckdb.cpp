@@ -2,9 +2,9 @@
  * Entrance for testing DuckDB Adapter
  * */
 
+#include "adapters/duckdb_adapter.h"
 #include "duckdb/planner/logical_operator.hpp"
-#include "duckdb_adapter.h"
-#include "util.h"
+#include "util/util.h"
 #include <iostream>
 
 void test_single_query(middleware::DuckDBAdapter *adapter,

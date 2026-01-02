@@ -2,7 +2,7 @@
  * DuckDB adapter for binding IR to the DuckDB engine
  * */
 
-#include "duckdb_adapter.h"
+#include "adapters/duckdb_adapter.h"
 
 #include <iostream>
 #include <stdexcept>

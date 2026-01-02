@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "db_adapter.h"
+#include "adapters/db_adapter.h"
 
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_search_path.hpp"

@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <vector>
 
-#define DEBUG_MIDDLEWARE false
+#define DEBUG_MIDDLEWARE true
 #define MEASURE_SINGLE_QUERY false
 
 namespace middleware {

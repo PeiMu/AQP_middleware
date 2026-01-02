@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "cpp_interface.h"
+#include "util/util.h"
 
 namespace middleware {
 struct QueryResult {
@@ -34,8 +35,8 @@ public:
 
   // Convert IR to SQL
   std::string GenerateSQL(ir_sql_converter::SimplestStmt &simplest_stmt,
-                     int query_id, bool save_file = false,
-                     const std::string &sql_path = "") {
+                          int query_id, bool save_file = false,
+                          const std::string &sql_path = "") {
     auto sql = ir_sql_converter::ConvertIRToSQL(simplest_stmt, query_id,
                                                 save_file, sql_path);
     return sql;

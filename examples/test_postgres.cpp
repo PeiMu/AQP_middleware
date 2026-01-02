@@ -2,8 +2,8 @@
  * Entrance for testing DuckDB Adapter
  * */
 
-#include "postgres_adapter.h"
-#include "util.h"
+#include "adapters/postgres_adapter.h"
+#include "util/util.h"
 #include <iostream>
 
 void test_single_query(middleware::PostgreSQLAdapter *adapter,
