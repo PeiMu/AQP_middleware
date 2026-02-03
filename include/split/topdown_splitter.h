@@ -49,16 +49,12 @@ private:
   IRReorderGet reorder_get_;
   bool enable_reorder_;
 
-  // Track which tables have been executed
-  std::set<unsigned int> executed_tables_;
-
-  ir_sql_converter::SimplestStmt *sub_ir = nullptr;
+  // Pointer to the found split point during VisitOperator traversal
+  // This is set during tree traversal and used in ExtractNextSubquery
+  ir_sql_converter::SimplestStmt *found_split_node_ = nullptr;
 
   // Current subquery index
   int query_split_index_ = 0;
-
-  // Iteration counter
-  int split_iteration_ = 0;
 
   // table_index -> table_name
   std::unordered_map<unsigned int, std::string> table_names_;

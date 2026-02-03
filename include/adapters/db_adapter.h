@@ -44,7 +44,9 @@ public:
 
   // Execute SQL query
   virtual QueryResult ExecuteSQL(const std::string &sql) = 0;
-  virtual void ExecuteSQLandCreateTempTable(const std::string &sql) = 0;
+  virtual void
+  ExecuteSQLandCreateTempTable(const std::string &sql,
+                               const std::string &temp_table_name) = 0;
 
   // Temp table management
   virtual void CreateTempTable(const std::string &table_name,
@@ -60,13 +62,14 @@ public:
 
   // Get estimated cost and rows for a query using EXPLAIN
   // Returns {estimated_cost, estimated_rows}
-  virtual std::pair<double, double> GetEstimatedCost(const std::string &sql) = 0;
+  virtual std::pair<double, double>
+  GetEstimatedCost(const std::string &sql) = 0;
 
   virtual std::string GetEngineName() const = 0;
 
   virtual void CleanUp() = 0;
 
-  unsigned int subquery_index = 1;
+  unsigned int subquery_index = 0;
 
   // std::string intermediate_table_name, int64_t created_table_size
   std::unordered_map<std::string, int64_t> temp_table_card_;

@@ -164,7 +164,8 @@ QueryResult DuckDBAdapter::ExecuteSQL(const std::string &sql) {
   return result;
 }
 
-void DuckDBAdapter::ExecuteSQLandCreateTempTable(const std::string &sql) {
+void DuckDBAdapter::ExecuteSQLandCreateTempTable(
+    const std::string &sql, const std::string &temp_table_name) {
   auto context = GetClientContext();
 
   // Begin transaction if in auto-commit mode
@@ -179,9 +180,8 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(const std::string &sql) {
   auto subquery_result = duckdb_result->Collection();
   auto data_chunk_index = planner->binder->GenerateTableIndex();
 
-  std::string intermediate_table_name = "temp" + std::to_string(subquery_index);
   subquery_index++;
-  intermediate_table_map[data_chunk_index] = intermediate_table_name;
+  intermediate_table_map[data_chunk_index] = temp_table_name;
   // create a table from data chunk
   auto &default_entry = context->client_data->catalog_search_path->GetDefault();
   auto current_catalog = default_entry.catalog;
@@ -189,7 +189,7 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(const std::string &sql) {
   auto &catalog = duckdb::Catalog::GetCatalog(*context, TEMP_CATALOG);
   auto &types = subquery_result.Types();
   auto info = duckdb::make_uniq<duckdb::CreateTableInfo>(
-      TEMP_CATALOG, DEFAULT_SCHEMA, intermediate_table_name);
+      TEMP_CATALOG, DEFAULT_SCHEMA, temp_table_name);
   info->temporary = true;
   info->on_conflict = duckdb::OnCreateConflict::ERROR_ON_CONFLICT;
 
@@ -215,13 +215,14 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(const std::string &sql) {
   auto created_table = catalog.CreateTable(*context, std::move(info));
   auto &created_table_entry = created_table->Cast<duckdb::TableCatalogEntry>();
   int64_t created_table_size = subquery_result.Count();
-  temp_table_card_.emplace(intermediate_table_name, created_table_size);
-//  const duckdb::vector<duckdb::unique_ptr<duckdb::BoundConstraint>>
-//      bound_constraints = planner->binder->BindConstraints(created_table_entry);
+  temp_table_card_.emplace(temp_table_name, created_table_size);
+  //  const duckdb::vector<duckdb::unique_ptr<duckdb::BoundConstraint>>
+  //      bound_constraints =
+  //      planner->binder->BindConstraints(created_table_entry);
 
   auto &storage = created_table_entry.GetStorage();
-//  storage.LocalAppend(created_table_entry, *context, subquery_result,
-//                      bound_constraints, nullptr);
+  //  storage.LocalAppend(created_table_entry, *context, subquery_result,
+  //                      bound_constraints, nullptr);
   storage.LocalAppend(created_table_entry, *context, subquery_result);
 
   // Commit transaction if in auto-commit mode
@@ -331,8 +332,9 @@ DuckDBAdapter::GetEstimatedCost(const std::string &sql) {
     while ((pos = explain_output.find("~", pos)) != std::string::npos) {
       pos++;
       size_t end = pos;
-      while (end < explain_output.size() &&
-             (std::isdigit(explain_output[end]) || explain_output[end] == '.')) {
+      while (
+          end < explain_output.size() &&
+          (std::isdigit(explain_output[end]) || explain_output[end] == '.')) {
         end++;
       }
       if (end > pos) {

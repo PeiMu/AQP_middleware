@@ -51,7 +51,8 @@ PostgreSQLAdapter::ConvertPlanToIR() {
   // Use schema-aware conversion if global schema parser is initialized,
   // otherwise fall back to basic conversion (column indices will be 0)
   std::unique_ptr<ir_sql_converter::SimplestStmt> stmt =
-      ir_sql_converter::ConvertParseTreeToIRWithSchema(parse_tree, subquery_index);
+      ir_sql_converter::ConvertParseTreeToIRWithSchema(parse_tree,
+                                                       subquery_index);
   return std::move(stmt);
 }
 
@@ -102,7 +103,31 @@ QueryResult PostgreSQLAdapter::ExecuteSQL(const std::string &sql) {
   return result;
 }
 
-void PostgreSQLAdapter::ExecuteSQLandCreateTempTable(const std::string &sql) {}
+void PostgreSQLAdapter::ExecuteSQLandCreateTempTable(
+    const std::string &sql, const std::string &temp_table_name) {
+  CheckConnection();
+
+  // Create temp table with query results using CREATE TEMP TABLE AS
+  std::string create_sql = "CREATE TEMP TABLE " + temp_table_name + " AS (" +
+                           sql.substr(0, sql.size() - 1) + ");";
+
+  std::cout << "[PostgreSQL] Creating temp table: " << temp_table_name
+            << std::endl;
+
+  PGresult *pg_result = PQexec(conn, create_sql.c_str());
+
+  if (PQresultStatus(pg_result) != PGRES_COMMAND_OK) {
+    std::string error_msg =
+        "Failed to create temp table: " + std::string(PQerrorMessage(conn));
+    PQclear(pg_result);
+    throw std::runtime_error(error_msg);
+  }
+
+  PQclear(pg_result);
+
+  std::cout << "[PostgreSQL] Created temp table: " << temp_table_name
+            << std::endl;
+}
 
 void PostgreSQLAdapter::CreateTempTable(const std::string &table_name,
                                         const QueryResult &result) {}
@@ -152,8 +177,19 @@ bool PostgreSQLAdapter::TempTableExists(const std::string &table_name) {
 
 uint64_t
 PostgreSQLAdapter::GetTempTableCardinality(const std::string &temp_table_name) {
-  // TODO - get by Explain Analysis
-  return 0;
+  CheckConnection();
+
+  std::string count_sql = "SELECT COUNT(*) FROM " + temp_table_name;
+  PGresult *pg_result = PQexec(conn, count_sql.c_str());
+
+  uint64_t cardinality = 0;
+  if (PQresultStatus(pg_result) == PGRES_TUPLES_OK &&
+      PQntuples(pg_result) > 0) {
+    cardinality = std::stoull(PQgetvalue(pg_result, 0, 0));
+  }
+
+  PQclear(pg_result);
+  return cardinality;
 }
 
 std::pair<double, double>

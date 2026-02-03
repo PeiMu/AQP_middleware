@@ -14,22 +14,8 @@ namespace middleware {
 
 // Result of extracting a subquery
 struct SubqueryExtraction {
-  // Set of table indices that will be executed in this subquery
-  std::set<unsigned int> executed_table_indices;
-
-  // Optional: name for the temporary table to create
-  std::string temp_table_name;
-
-  // The built sub-IR for this subquery (owns the IR)
-  // This is the NEW sub-IR built from cluster tables
-  std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir;
-
-  // Pointer to the node in the original tree that represents this subquery
-  // Used as fallback when we can't build a new sub-IR
-  ir_sql_converter::SimplestStmt *pipeline_breaker_ptr = nullptr;
-
-  SubqueryExtraction(std::set<unsigned int> table_indices,
-                     std::string temp_name = "")
+  explicit SubqueryExtraction(std::set<unsigned int> table_indices,
+                              std::string temp_name = "")
       : executed_table_indices(std::move(table_indices)),
         temp_table_name(std::move(temp_name)) {}
 
@@ -40,6 +26,23 @@ struct SubqueryExtraction {
     }
     return pipeline_breaker_ptr;
   }
+
+  // Set of table indices that will be executed in this subquery
+  std::set<unsigned int> executed_table_indices;
+
+  // Optional: name for the temporary table to create
+  std::string temp_table_name;
+
+  // The built sub-IR for this subquery (owns the IR)
+  // For FK-based strategies: NEW sub-IR built from cluster tables (used for
+  // execution) For TopDown: typically null (uses pipeline_breaker_ptr instead)
+  std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir;
+
+  // Pointer to node in the ORIGINAL tree that should be replaced with temp
+  // table For FK-based strategies: the LCA node containing cluster tables (used
+  // for UpdateRemainingIR) For TopDown: points to the subtree for both
+  // execution AND replacement
+  ir_sql_converter::SimplestStmt *pipeline_breaker_ptr = nullptr;
 };
 
 class SplitAlgorithm {
@@ -68,6 +71,12 @@ public:
 
 protected:
   DBAdapter *adapter_;
+
+  // Iteration counter
+  int split_iteration_ = 0;
+
+  // Track which tables have been executed (now part of a temp table)
+  std::set<unsigned int> executed_tables_;
 };
 
 } // namespace middleware

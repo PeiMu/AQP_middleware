@@ -32,7 +32,6 @@ public:
     graph_.resize(size_ * size_, false);
   }
 
-
   void SetEdge(int i, int j, bool value) {
     if (i >= 0 && i < size_ && j >= 0 && j < size_) {
       graph_[i * size_ + j] = value;
@@ -117,8 +116,8 @@ protected:
 
   // Remove redundant FK-FK joins (joins between two relationship tables)
   // This implements PostgreSQL's rRj (removeRedundantJoin) function
-  std::vector<std::pair<unsigned int, unsigned int>>
-  RemoveRedundantJoins(const std::vector<std::pair<unsigned int, unsigned int>> &joins) const;
+  std::vector<std::pair<unsigned int, unsigned int>> RemoveRedundantJoins(
+      const std::vector<std::pair<unsigned int, unsigned int>> &joins) const;
 
   // Generate SQL for a cluster of tables (for cost estimation)
   // Returns empty string if generation fails
@@ -181,8 +180,6 @@ protected:
   std::map<std::string, unsigned int> table_name_to_index_;
   ForeignKeyGraph fk_graph_;
   std::vector<bool> is_relationship_;
-
-  int split_iteration_ = 0;
 };
 
 // ===== MinSubquery Strategy =====
@@ -215,7 +212,8 @@ public:
   std::string GetStrategyName() const override { return "RelationshipCenter"; }
 
 private:
-  // Find next relationship table and its connected entities (cost-based selection)
+  // Find next relationship table and its connected entities (cost-based
+  // selection)
   std::vector<int> FindRelationshipCluster(ir_sql_converter::SimplestStmt *ir);
 };
 
@@ -232,7 +230,8 @@ public:
   std::string GetStrategyName() const override { return "EntityCenter"; }
 
 private:
-  // Find next entity table and its connected relationships (cost-based selection)
+  // Find next entity table and its connected relationships (cost-based
+  // selection)
   std::vector<int> FindEntityCluster(ir_sql_converter::SimplestStmt *ir);
 };
 

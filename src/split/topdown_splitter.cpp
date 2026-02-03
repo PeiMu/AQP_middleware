@@ -14,7 +14,7 @@ void TopDownSplitter::Preprocess(
 
   // Reset state
   executed_tables_.clear();
-  sub_ir = nullptr;
+  found_split_node_ = nullptr;
   query_split_index_ = 0;
   split_iteration_ = 0;
 
@@ -41,7 +41,7 @@ void TopDownSplitter::Preprocess(
 
 void TopDownSplitter::VisitOperator(ir_sql_converter::SimplestStmt *node,
                                     bool is_top_most) {
-  if (!node || sub_ir) {
+  if (!node || found_split_node_) {
     return;
   }
 
@@ -110,24 +110,24 @@ void TopDownSplitter::VisitOperator(ir_sql_converter::SimplestStmt *node,
       break;
     }
 
-//    case ir_sql_converter::SimplestNodeType::AggregateNode: {
-//      // Aggregate is also a split point
-//      should_split = true;
-//      std::cout << "[TopDownSplitter] Found AGGREGATE split point at child "
-//                << idx << std::endl;
-//      break;
-//    }
+      //    case ir_sql_converter::SimplestNodeType::AggregateNode: {
+      //      // Aggregate is also a split point
+      //      should_split = true;
+      //      std::cout << "[TopDownSplitter] Found AGGREGATE split point at
+      //      child "
+      //                << idx << std::endl;
+      //      break;
+      //    }
 
     default:
       should_split = false;
       break;
     }
 
-
     // If this is a split point, add to queue
     if (should_split) {
       query_split_index_++;
-      sub_ir = child;
+      found_split_node_ = child;
       std::cout << "[TopDownSplitter] Added split point #" << query_split_index_
                 << ": " << GetNodeTypeName(child_type) << std::endl;
     }
@@ -147,20 +147,20 @@ std::unique_ptr<SubqueryExtraction> TopDownSplitter::ExtractNextSubquery(
   }
 
   // Re-visit the UPDATED tree to find the next split point
-  sub_ir = nullptr;                  // Clear previous
+  found_split_node_ = nullptr;       // Clear previous
   VisitOperator(remaining_ir, true); // Re-identify split points
 
   // Check if there are more subqueries to execute
-  if (!sub_ir) {
+  if (!found_split_node_) {
     std::cout << "[TopDownSplitter] No more subqueries in queue" << std::endl;
     return nullptr;
   }
 
   std::cout << "[TopDownSplitter] Selected subquery node: "
-            << GetNodeTypeName(sub_ir->GetNodeType()) << std::endl;
+            << GetNodeTypeName(found_split_node_->GetNodeType()) << std::endl;
 
   // Collect all table indices in this subquery's subtree
-  auto table_indices = CollectTableIndices(sub_ir);
+  auto table_indices = CollectTableIndices(found_split_node_);
 
   std::cout << "[TopDownSplitter] Tables involved: ";
   for (auto idx : table_indices) {
@@ -177,14 +177,14 @@ std::unique_ptr<SubqueryExtraction> TopDownSplitter::ExtractNextSubquery(
       std::make_unique<SubqueryExtraction>(table_indices, temp_table_name);
 
   // Store pointer to the node that represents this subquery
-  extraction->pipeline_breaker_ptr = sub_ir;
+  extraction->pipeline_breaker_ptr = found_split_node_;
 
   std::cout << "[TopDownSplitter] Extraction complete for "
-            << GetNodeTypeName(sub_ir->GetNodeType()) << std::endl;
+            << GetNodeTypeName(found_split_node_->GetNodeType()) << std::endl;
 
   // Check for same-table issue
   std::unordered_set<std::string> table_names_in_subquery;
-  if (CheckSameTableInSubtree(sub_ir, table_names_in_subquery)) {
+  if (CheckSameTableInSubtree(found_split_node_, table_names_in_subquery)) {
     // TODO: implement merge-back logic like DuckDB
     throw std::runtime_error("todo: fix same-table issue!");
   }
@@ -226,11 +226,12 @@ bool TopDownSplitter::IsComplete(
     return true;
   }
 
-  // Check if there are any more subqueries in the queue
-  bool complete = !sub_ir;
+  // Count remaining base tables - complete when only 1 table left
+  int remaining_tables = CountBaseTables(remaining_ir);
+  bool complete = (remaining_tables <= 1);
 
   std::cout << "[TopDownSplitter] IsComplete: " << (complete ? "YES" : "NO")
-            << std::endl;
+            << " (remaining tables: " << remaining_tables << ")" << std::endl;
 
   return complete;
 }

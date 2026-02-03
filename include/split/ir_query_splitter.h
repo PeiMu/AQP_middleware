@@ -78,6 +78,10 @@ private:
   std::string GenerateTempTableName();
   void PrintIterationInfo(int iteration, const std::string &info);
 
+  // Check if remaining IR is trivial (just a temp table reference)
+  // Returns the temp table name if trivial, empty string otherwise
+  std::string GetTrivialTempTable(ir_sql_converter::SimplestStmt *ir) const;
+
   DBAdapter *adapter_;
   ParamConfig config_;
   std::unique_ptr<SplitAlgorithm> splitter_;

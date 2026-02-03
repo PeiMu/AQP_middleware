@@ -57,7 +57,9 @@ void FKBasedSplitter::Preprocess(
 
   join_graph_.Print();
 
+  // Reset state
   split_iteration_ = 0;
+  executed_tables_.clear();
 
   std::cout << "[" << GetStrategyName() << "] Preprocessing complete"
             << std::endl;
@@ -86,14 +88,17 @@ FKBasedSplitter::RemoveRedundantJoins(
 
   for (const auto &[t1, t2] : joins) {
     // Check if both tables are relationship tables
-    bool t1_is_relationship = (t1 < is_relationship_.size()) && is_relationship_[t1];
-    bool t2_is_relationship = (t2 < is_relationship_.size()) && is_relationship_[t2];
+    bool t1_is_relationship =
+        (t1 < is_relationship_.size()) && is_relationship_[t1];
+    bool t2_is_relationship =
+        (t2 < is_relationship_.size()) && is_relationship_[t2];
 
     if (t1_is_relationship && t2_is_relationship) {
       // Both are relationship tables - this is a redundant FK-FK join
-      std::cout << "[" << GetStrategyName() << "] Removing redundant FK-FK join: "
-                << t1 << " (" << table_index_to_name_.at(t1) << ") <-> "
-                << t2 << " (" << table_index_to_name_.at(t2) << ")" << std::endl;
+      std::cout << "[" << GetStrategyName()
+                << "] Removing redundant FK-FK join: " << t1 << " ("
+                << table_index_to_name_.at(t1) << ") <-> " << t2 << " ("
+                << table_index_to_name_.at(t2) << ")" << std::endl;
       continue;
     }
 
@@ -190,9 +195,9 @@ void FKBasedSplitter::BuildJoinGraph(const ir_sql_converter::SimplestStmt *ir) {
         // PostgreSQL line 1844
         join_graph_.SetEdge(fk_owner_idx, pk_ref_idx, true);
         std::cout << "  RelationshipCenter FK edge: " << fk_owner_idx << " -> "
-                  << pk_ref_idx << " ("
-                  << table_index_to_name_.at(fk_owner_idx) << " -> "
-                  << table_index_to_name_.at(pk_ref_idx) << ")" << std::endl;
+                  << pk_ref_idx << " (" << table_index_to_name_.at(fk_owner_idx)
+                  << " -> " << table_index_to_name_.at(pk_ref_idx) << ")"
+                  << std::endl;
       } else { // EntityCenter
         // EntityCenter: graph[pk_ref][fk_owner] = true (entity -> relationship)
         // PostgreSQL line 1848
@@ -357,13 +362,28 @@ std::set<unsigned int> FKBasedSplitter::CollectTableIndices(
 
 bool FKBasedSplitter::IsComplete(
     const ir_sql_converter::SimplestStmt *remaining_ir) {
-  // Check if join graph has any remaining edges
-  int remaining_edges = join_graph_.CountEdges();
+  // Count edges only between non-executed tables
+  int remaining_edges = 0;
+  for (int i = 0; i < join_graph_.Size(); i++) {
+    if (executed_tables_.count(i)) {
+      continue; // Skip executed tables
+    }
+    for (int j = i + 1; j < join_graph_.Size(); j++) {
+      if (executed_tables_.count(j)) {
+        continue; // Skip executed tables
+      }
+      if (join_graph_.HasEdge(i, j) || join_graph_.HasEdge(j, i)) {
+        remaining_edges++;
+      }
+    }
+  }
+
   bool complete = (remaining_edges == 0);
 
   std::cout << "[" << GetStrategyName()
             << "] IsComplete: " << (complete ? "YES" : "NO")
-            << " (remaining edges: " << remaining_edges << ")" << std::endl;
+            << " (remaining edges between non-executed tables: "
+            << remaining_edges << ")" << std::endl;
 
   return complete;
 }
@@ -410,10 +430,12 @@ FKBasedSplitter::GenerateSQLForCluster(const std::vector<int> &cluster,
       // a placeholder that the optimizer will handle
       auto it1 = table_index_to_name_.find(t1);
       auto it2 = table_index_to_name_.find(t2);
-      if (it1 != table_index_to_name_.end() && it2 != table_index_to_name_.end()) {
+      if (it1 != table_index_to_name_.end() &&
+          it2 != table_index_to_name_.end()) {
         // Use "1=1" as placeholder - the actual condition doesn't matter much
         // for cost estimation as long as the join type is correct
-        // For more accurate estimation, we'd need to extract actual column names
+        // For more accurate estimation, we'd need to extract actual column
+        // names
         where_clauses.push_back(it1->second + ".id = " + it2->second + ".id");
       }
     }
@@ -497,8 +519,8 @@ ir_sql_converter::SimplestStmt *FKBasedSplitter::FindSubIRForCluster(
     return nullptr;
   }
 
-  // Strategy: Find the smallest subtree that contains exactly the cluster tables
-  // This is the "lowest common ancestor" that spans all cluster tables
+  // Strategy: Find the smallest subtree that contains exactly the cluster
+  // tables This is the "lowest common ancestor" that spans all cluster tables
 
   // First, check if current node contains exactly the cluster tables
   auto node_tables = CollectTableIndices(ir);
@@ -583,8 +605,7 @@ FKBasedSplitter::CollectScansForTables(ir_sql_converter::SimplestStmt *ir,
 
 std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
 FKBasedSplitter::CollectJoinConditionsForTables(
-    ir_sql_converter::SimplestStmt *ir,
-    const std::set<unsigned int> &tables) {
+    ir_sql_converter::SimplestStmt *ir, const std::set<unsigned int> &tables) {
   std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
       conditions;
 
@@ -601,11 +622,15 @@ FKBasedSplitter::CollectJoinConditionsForTables(
 
         // Include condition if BOTH tables are in our cluster
         if (tables.count(left_table) && tables.count(right_table)) {
-          // Clone the condition - constructor order: (comparison_type, left_attr, right_attr)
-          auto cloned = std::make_unique<ir_sql_converter::SimplestVarComparison>(
-              cond->GetSimplestExprType(),
-              std::make_unique<ir_sql_converter::SimplestAttr>(*cond->left_attr),
-              std::make_unique<ir_sql_converter::SimplestAttr>(*cond->right_attr));
+          // Clone the condition - constructor order: (comparison_type,
+          // left_attr, right_attr)
+          auto cloned =
+              std::make_unique<ir_sql_converter::SimplestVarComparison>(
+                  cond->GetSimplestExprType(),
+                  std::make_unique<ir_sql_converter::SimplestAttr>(
+                      *cond->left_attr),
+                  std::make_unique<ir_sql_converter::SimplestAttr>(
+                      *cond->right_attr));
           conditions.push_back(std::move(cloned));
         }
       }
@@ -625,8 +650,7 @@ FKBasedSplitter::CollectJoinConditionsForTables(
 
 std::vector<std::unique_ptr<ir_sql_converter::SimplestExpr>>
 FKBasedSplitter::CollectFilterConditionsForTables(
-    ir_sql_converter::SimplestStmt *ir,
-    const std::set<unsigned int> &tables) {
+    ir_sql_converter::SimplestStmt *ir, const std::set<unsigned int> &tables) {
   std::vector<std::unique_ptr<ir_sql_converter::SimplestExpr>> filters;
 
   if (!ir)
@@ -636,14 +660,20 @@ FKBasedSplitter::CollectFilterConditionsForTables(
   for (const auto &qual : ir->qual_vec) {
     // Check if filter involves only tables in our cluster
     // For SimplestVarConstComparison, check the attr's table
-    if (qual->GetNodeType() == ir_sql_converter::SimplestNodeType::VarConstComparisonNode) {
-      auto *var_const = dynamic_cast<ir_sql_converter::SimplestVarConstComparison *>(qual.get());
+    if (qual->GetNodeType() ==
+        ir_sql_converter::SimplestNodeType::VarConstComparisonNode) {
+      auto *var_const =
+          dynamic_cast<ir_sql_converter::SimplestVarConstComparison *>(
+              qual.get());
       if (var_const && tables.count(var_const->attr->GetTableIndex())) {
         // Clone the filter
-        auto cloned = std::make_unique<ir_sql_converter::SimplestVarConstComparison>(
-            var_const->GetSimplestExprType(),
-            std::make_unique<ir_sql_converter::SimplestAttr>(*var_const->attr),
-            std::make_unique<ir_sql_converter::SimplestConstVar>(*var_const->const_var));
+        auto cloned =
+            std::make_unique<ir_sql_converter::SimplestVarConstComparison>(
+                var_const->GetSimplestExprType(),
+                std::make_unique<ir_sql_converter::SimplestAttr>(
+                    *var_const->attr),
+                std::make_unique<ir_sql_converter::SimplestConstVar>(
+                    *var_const->const_var));
         filters.push_back(std::move(cloned));
       }
     }
@@ -660,9 +690,10 @@ FKBasedSplitter::CollectFilterConditionsForTables(
   return filters;
 }
 
-// Helper: Collect attributes from cluster tables that are needed for join conditions
-// with tables OUTSIDE the cluster (for the remaining plan)
-// NOTE: Only considers joins that still exist in join_graph_ (after RemoveRedundantJoins)
+// Helper: Collect attributes from cluster tables that are needed for join
+// conditions with tables OUTSIDE the cluster (for the remaining plan) NOTE:
+// Only considers joins that still exist in join_graph_ (after
+// RemoveRedundantJoins)
 std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
 FKBasedSplitter::CollectExternalJoinAttrs(
     ir_sql_converter::SimplestStmt *ir,
@@ -689,22 +720,27 @@ FKBasedSplitter::CollectExternalJoinAttrs(
         }
 
         // If one table is in cluster and the other is NOT, we need to include
-        // the cluster table's attr in our output (for the remaining plan's join)
+        // the cluster table's attr in our output (for the remaining plan's
+        // join)
         bool left_in_cluster = cluster_tables.count(left_table) > 0;
         bool right_in_cluster = cluster_tables.count(right_table) > 0;
 
         if (left_in_cluster && !right_in_cluster) {
-          auto key = std::make_pair(left_table, cond->left_attr->GetColumnIndex());
+          auto key =
+              std::make_pair(left_table, cond->left_attr->GetColumnIndex());
           if (seen.find(key) == seen.end()) {
             seen.insert(key);
-            attrs.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(*cond->left_attr));
+            attrs.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(
+                *cond->left_attr));
           }
         }
         if (right_in_cluster && !left_in_cluster) {
-          auto key = std::make_pair(right_table, cond->right_attr->GetColumnIndex());
+          auto key =
+              std::make_pair(right_table, cond->right_attr->GetColumnIndex());
           if (seen.find(key) == seen.end()) {
             seen.insert(key);
-            attrs.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(*cond->right_attr));
+            attrs.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(
+                *cond->right_attr));
           }
         }
       }
@@ -766,7 +802,8 @@ FKBasedSplitter::BuildSubIRForCluster(
       auto key = std::make_pair(attr->GetTableIndex(), attr->GetColumnIndex());
       if (seen_attrs.find(key) == seen_attrs.end()) {
         seen_attrs.insert(key);
-        required_attrs.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
+        required_attrs.push_back(
+            std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
       }
     }
   }
@@ -788,9 +825,11 @@ FKBasedSplitter::BuildSubIRForCluster(
   // Clone scan nodes
   std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> scan_nodes;
   for (auto *scan : scans) {
-    // Clone the scan node - build manually since SimplestStmt has no copy constructor
+    // Clone the scan node - build manually since SimplestStmt has no copy
+    // constructor
     std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> empty_children;
-    std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> cloned_target_list;
+    std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
+        cloned_target_list;
     for (const auto &attr : scan->target_list) {
       cloned_target_list.push_back(
           std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
@@ -811,7 +850,8 @@ FKBasedSplitter::BuildSubIRForCluster(
 
     std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> proj_target;
     for (auto &attr : required_attrs) {
-      proj_target.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
+      proj_target.push_back(
+          std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
     }
 
     auto proj_base = std::make_unique<ir_sql_converter::SimplestStmt>(
@@ -824,7 +864,8 @@ FKBasedSplitter::BuildSubIRForCluster(
   }
 
   // Build left-deep tree using CrossProduct for intermediate joins
-  std::unique_ptr<ir_sql_converter::SimplestStmt> result = std::move(scan_nodes[0]);
+  std::unique_ptr<ir_sql_converter::SimplestStmt> result =
+      std::move(scan_nodes[0]);
 
   for (size_t i = 1; i < scan_nodes.size(); i++) {
     std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> join_children;
@@ -861,7 +902,8 @@ FKBasedSplitter::BuildSubIRForCluster(
 
   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> proj_target;
   for (auto &attr : required_attrs) {
-    proj_target.push_back(std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
+    proj_target.push_back(
+        std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
   }
 
   auto proj_base = std::make_unique<ir_sql_converter::SimplestStmt>(
@@ -873,7 +915,8 @@ FKBasedSplitter::BuildSubIRForCluster(
       std::move(proj_base), 0);
 
   std::cout << "[BuildSubIRForCluster] Built sub-IR with Projection ("
-            << projection->target_list.size() << " output columns)" << std::endl;
+            << projection->target_list.size() << " output columns)"
+            << std::endl;
 
   return projection;
 }
@@ -952,18 +995,24 @@ std::unique_ptr<SubqueryExtraction> MinSubquerySplitter::ExtractNextSubquery(
   if (built_sub_ir) {
     extraction->sub_ir = std::move(built_sub_ir);
     std::cout << "[MinSubquery] Built sub-IR for pair" << std::endl;
+  }
+
+  // Always find the node in original tree to replace (for UpdateRemainingIR)
+  // This is needed even when we build a new sub_ir
+  ir_sql_converter::SimplestStmt *found_node =
+      FindSubIRForCluster(remaining_ir, table_indices);
+  if (found_node) {
+    extraction->pipeline_breaker_ptr = found_node;
+    std::cout << "[MinSubquery] Found node to replace in remaining IR"
+              << std::endl;
   } else {
-    // Fallback: try to find existing subtree
-    ir_sql_converter::SimplestStmt *found_sub_ir =
-        FindSubIRForCluster(remaining_ir, table_indices);
-    if (found_sub_ir) {
-      extraction->pipeline_breaker_ptr = found_sub_ir;
-      std::cout << "[MinSubquery] Using found sub-IR for pair" << std::endl;
-    } else {
-      std::cerr << "[MinSubquery] Warning: Could not build or find sub-IR"
-                << std::endl;
-      extraction->pipeline_breaker_ptr = remaining_ir;
-    }
+    std::cerr << "[MinSubquery] Warning: Could not find node to replace"
+              << std::endl;
+  }
+
+  // Track executed tables so they're excluded from future clusters
+  for (unsigned int idx : table_indices) {
+    executed_tables_.insert(idx);
   }
 
   return extraction;
@@ -980,7 +1029,17 @@ MinSubquerySplitter::FindNextPair(ir_sql_converter::SimplestStmt *ir) {
   std::cout << "[MinSubquery] Evaluating candidate pairs:" << std::endl;
 
   for (int i = 0; i < join_graph_.Size(); i++) {
+    // Skip tables that have already been executed
+    if (executed_tables_.count(i)) {
+      continue;
+    }
+
     for (int j = i + 1; j < join_graph_.Size(); j++) {
+      // Skip tables that have already been executed
+      if (executed_tables_.count(j)) {
+        continue;
+      }
+
       if (!join_graph_.HasEdge(i, j)) {
         continue;
       }
@@ -1060,18 +1119,23 @@ RelationshipCenterSplitter::ExtractNextSubquery(
   if (built_sub_ir) {
     extraction->sub_ir = std::move(built_sub_ir);
     std::cout << "[RelationshipCenter] Built sub-IR for cluster" << std::endl;
+  }
+
+  // Always find the node in original tree to replace (for UpdateRemainingIR)
+  ir_sql_converter::SimplestStmt *found_node =
+      FindSubIRForCluster(remaining_ir, table_indices);
+  if (found_node) {
+    extraction->pipeline_breaker_ptr = found_node;
+    std::cout << "[RelationshipCenter] Found node to replace in remaining IR"
+              << std::endl;
   } else {
-    // Fallback: try to find existing subtree
-    ir_sql_converter::SimplestStmt *found_sub_ir =
-        FindSubIRForCluster(remaining_ir, table_indices);
-    if (found_sub_ir) {
-      extraction->pipeline_breaker_ptr = found_sub_ir;
-      std::cout << "[RelationshipCenter] Using found sub-IR" << std::endl;
-    } else {
-      std::cerr << "[RelationshipCenter] Warning: Could not build or find sub-IR"
-                << std::endl;
-      extraction->pipeline_breaker_ptr = remaining_ir;
-    }
+    std::cerr << "[RelationshipCenter] Warning: Could not find node to replace"
+              << std::endl;
+  }
+
+  // Track executed tables so they're excluded from future clusters
+  for (unsigned int idx : table_indices) {
+    executed_tables_.insert(idx);
   }
 
   return extraction;
@@ -1090,6 +1154,11 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
 
   // First pass: check relationship tables as centers
   for (int i = 0; i < join_graph_.Size(); i++) {
+    // Skip tables that have already been executed
+    if (executed_tables_.count(i)) {
+      continue;
+    }
+
     // For RelationshipCenter, prefer relationship tables as centers
     if (!is_relationship_[i]) {
       continue;
@@ -1100,6 +1169,10 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
 
     // Collect all connected tables (entities pointed to by this relationship)
     for (int j = 0; j < join_graph_.Size(); j++) {
+      // Skip tables that have already been executed
+      if (executed_tables_.count(j)) {
+        continue;
+      }
       if (join_graph_.HasEdge(i, j)) {
         cluster.push_back(j);
       }
@@ -1131,10 +1204,19 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
   // If no relationship center found, try any table with connections
   if (best_cluster.empty()) {
     for (int i = 0; i < join_graph_.Size(); i++) {
+      // Skip tables that have already been executed
+      if (executed_tables_.count(i)) {
+        continue;
+      }
+
       std::vector<int> cluster;
       cluster.push_back(i);
 
       for (int j = 0; j < join_graph_.Size(); j++) {
+        // Skip tables that have already been executed
+        if (executed_tables_.count(j)) {
+          continue;
+        }
         if (join_graph_.HasEdge(i, j)) {
           cluster.push_back(j);
         }
@@ -1158,9 +1240,8 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
   }
 
   if (!best_cluster.empty()) {
-    std::cout << "[RelationshipCenter] Best cluster center="
-              << best_cluster[0] << " ("
-              << table_index_to_name_[best_cluster[0]]
+    std::cout << "[RelationshipCenter] Best cluster center=" << best_cluster[0]
+              << " (" << table_index_to_name_[best_cluster[0]]
               << ") with cost=" << best_cost << std::endl;
   }
 
@@ -1215,18 +1296,23 @@ std::unique_ptr<SubqueryExtraction> EntityCenterSplitter::ExtractNextSubquery(
   if (built_sub_ir) {
     extraction->sub_ir = std::move(built_sub_ir);
     std::cout << "[EntityCenter] Built sub-IR for cluster" << std::endl;
+  }
+
+  // Always find the node in original tree to replace (for UpdateRemainingIR)
+  ir_sql_converter::SimplestStmt *found_node =
+      FindSubIRForCluster(remaining_ir, table_indices);
+  if (found_node) {
+    extraction->pipeline_breaker_ptr = found_node;
+    std::cout << "[EntityCenter] Found node to replace in remaining IR"
+              << std::endl;
   } else {
-    // Fallback: try to find existing subtree
-    ir_sql_converter::SimplestStmt *found_sub_ir =
-        FindSubIRForCluster(remaining_ir, table_indices);
-    if (found_sub_ir) {
-      extraction->pipeline_breaker_ptr = found_sub_ir;
-      std::cout << "[EntityCenter] Using found sub-IR" << std::endl;
-    } else {
-      std::cerr << "[EntityCenter] Warning: Could not build or find sub-IR"
-                << std::endl;
-      extraction->pipeline_breaker_ptr = remaining_ir;
-    }
+    std::cerr << "[EntityCenter] Warning: Could not find node to replace"
+              << std::endl;
+  }
+
+  // Track executed tables so they're excluded from future clusters
+  for (unsigned int idx : table_indices) {
+    executed_tables_.insert(idx);
   }
 
   return extraction;
@@ -1244,6 +1330,11 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir) {
 
   // First pass: check entity tables as centers
   for (int i = 0; i < join_graph_.Size(); i++) {
+    // Skip tables that have already been executed
+    if (executed_tables_.count(i)) {
+      continue;
+    }
+
     // For EntityCenter, prefer entity tables as centers
     if (is_relationship_[i]) {
       continue;
@@ -1254,6 +1345,10 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir) {
 
     // Collect all connected tables (relationships pointed to by this entity)
     for (int j = 0; j < join_graph_.Size(); j++) {
+      // Skip tables that have already been executed
+      if (executed_tables_.count(j)) {
+        continue;
+      }
       if (join_graph_.HasEdge(i, j)) {
         cluster.push_back(j);
       }
@@ -1285,10 +1380,19 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir) {
   // If no entity center found, try any table with connections
   if (best_cluster.empty()) {
     for (int i = 0; i < join_graph_.Size(); i++) {
+      // Skip tables that have already been executed
+      if (executed_tables_.count(i)) {
+        continue;
+      }
+
       std::vector<int> cluster;
       cluster.push_back(i);
 
       for (int j = 0; j < join_graph_.Size(); j++) {
+        // Skip tables that have already been executed
+        if (executed_tables_.count(j)) {
+          continue;
+        }
         if (join_graph_.HasEdge(i, j)) {
           cluster.push_back(j);
         }

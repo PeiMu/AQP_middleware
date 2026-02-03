@@ -157,8 +157,6 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
             << iteration_count_ << " iteration(s)" << std::endl;
 
   // === Final Execution ===
-  std::cout << "\n[IRQuerySplitter] Executing final remaining IR" << std::endl;
-
   if (!remaining_ir) {
     throw std::runtime_error("Remaining IR is null after split loop");
   }
@@ -168,8 +166,25 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
     remaining_ir->Print();
   }
 
-  // Convert final IR to SQL and execute
-  // Uses: adapter_->GenerateSQL()
+  // Check if remaining IR is trivial (just a temp table reference)
+  // If so, we can return the temp table contents directly without re-executing
+  std::string trivial_temp = GetTrivialTempTable(remaining_ir.get());
+  if (!trivial_temp.empty()) {
+    std::cout << "\n[IRQuerySplitter] Final IR is trivial (temp table: "
+              << trivial_temp << "), returning directly" << std::endl;
+
+    // Just SELECT * FROM the temp table
+    std::string final_sql = "SELECT * FROM " + trivial_temp;
+    if (config_.enable_debug_print) {
+      std::cout << "=== Final SQL (trivial) ===" << std::endl;
+      std::cout << final_sql << std::endl;
+    }
+    return adapter_->ExecuteSQL(final_sql);
+  }
+
+  // Non-trivial case: generate and execute final SQL
+  std::cout << "\n[IRQuerySplitter] Executing final remaining IR" << std::endl;
+
   std::string final_sql =
       adapter_->GenerateSQL(*remaining_ir, adapter_->subquery_index++);
 
@@ -228,9 +243,9 @@ bool IRQuerySplitter::ExecuteOneIteration(
   }
 
   // Generate SQL from the sub-IR
-  std::string temp_table_name = GenerateTempTableName();
   std::string sub_sql =
       adapter_->GenerateSQL(*executable_ir, adapter_->subquery_index++);
+  std::string temp_table_name = GenerateTempTableName();
 
   if (config_.enable_debug_print) {
     std::cout << "\n=== Sub-Query SQL ===" << std::endl;
@@ -240,7 +255,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
   std::cout << "Executing sub-query and creating temp table: "
             << temp_table_name << std::endl;
 
-  adapter_->ExecuteSQLandCreateTempTable(sub_sql);
+  adapter_->ExecuteSQLandCreateTempTable(sub_sql, temp_table_name);
 
   unsigned int temp_table_index = adapter_->subquery_index - 1;
   uint64_t cardinality = adapter_->GetTempTableCardinality(temp_table_name);
@@ -317,7 +332,7 @@ TempTableInfo IRQuerySplitter::ExecuteSubIR(
   std::cout << "Executing sub-query and creating temp table: "
             << temp_table_name << std::endl;
 
-  adapter_->ExecuteSQLandCreateTempTable(sub_sql);
+  adapter_->ExecuteSQLandCreateTempTable(sub_sql, temp_table_name);
 
   // For now, use the temp table index from adapter
   unsigned int temp_table_index = adapter_->subquery_index - 1;
@@ -427,6 +442,44 @@ void IRQuerySplitter::PrintIterationInfo(int iteration,
   if (config_.enable_debug_print) {
     std::cout << "[Iteration " << iteration << "] " << info << std::endl;
   }
+}
+
+std::string
+IRQuerySplitter::GetTrivialTempTable(ir_sql_converter::SimplestStmt *ir) const {
+  if (!ir) {
+    return "";
+  }
+
+  // Case 1: IR is directly a ChunkNode (temp table reference)
+  if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::ChunkNode) {
+    auto *chunk = dynamic_cast<ir_sql_converter::SimplestChunk *>(ir);
+    if (chunk && !chunk->GetContents().empty()) {
+      return chunk->GetContents()[0]; // Return temp table name
+    }
+  }
+
+  // Case 2: IR is a Projection over a single ChunkNode
+  if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::ProjectionNode) {
+    if (ir->children.size() == 1 && ir->children[0]) {
+      auto *child = ir->children[0].get();
+      if (child->GetNodeType() ==
+          ir_sql_converter::SimplestNodeType::ChunkNode) {
+        auto *chunk = dynamic_cast<ir_sql_converter::SimplestChunk *>(child);
+        if (chunk && !chunk->GetContents().empty()) {
+          return chunk->GetContents()[0];
+        }
+      }
+    }
+  }
+
+  // Case 3: Check if there's only one node and it's a ChunkNode
+  // (remaining_ir might be wrapped in a generic StmtNode)
+  if (ir->children.size() == 1 && ir->children[0]) {
+    return GetTrivialTempTable(ir->children[0].get());
+  }
+
+  // Not trivial - has actual operations to perform
+  return "";
 }
 
 } // namespace middleware
