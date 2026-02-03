@@ -1,0 +1,233 @@
+/*
+ * Base class for FK-based split strategies (MinSubquery, RelationshipCenter,
+ * EntityCenter) Implements PostgreSQL's graph-based query splitting approach
+ */
+
+#pragma once
+
+#include "simplest_ir.h"
+#include "split/foreign_key_extractor.h"
+#include "split/split_algorithm.h"
+#include "util/param_config.h"
+#include <map>
+#include <set>
+#include <vector>
+
+namespace middleware {
+
+// Join graph: adjacency matrix representation
+// graph[i][j] = true means tables i and j have a join condition
+class JoinGraph {
+public:
+  // Default constructor (for member variable initialization)
+  JoinGraph() : size_(0) {}
+
+  JoinGraph(int num_tables) : size_(num_tables) {
+    graph_.resize(size_ * size_, false);
+  }
+
+  // Add resize method for later initialization
+  void Resize(int num_tables) {
+    size_ = num_tables;
+    graph_.resize(size_ * size_, false);
+  }
+
+
+  void SetEdge(int i, int j, bool value) {
+    if (i >= 0 && i < size_ && j >= 0 && j < size_) {
+      graph_[i * size_ + j] = value;
+    }
+  }
+
+  bool HasEdge(int i, int j) const {
+    if (i >= 0 && i < size_ && j >= 0 && j < size_) {
+      return graph_[i * size_ + j];
+    }
+    return false;
+  }
+
+  int Size() const { return size_; }
+
+  // Count remaining edges
+  int CountEdges() const {
+    int count = 0;
+    for (int i = 0; i < size_; i++) {
+      for (int j = i + 1; j < size_; j++) {
+        if (HasEdge(i, j) || HasEdge(j, i)) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  void Print() const {
+    std::cout << "Join Graph (" << size_ << "x" << size_ << "):" << std::endl;
+    for (int i = 0; i < size_; i++) {
+      for (int j = 0; j < size_; j++) {
+        std::cout << (HasEdge(i, j) ? "1" : "0") << " ";
+      }
+      std::cout << std::endl;
+    }
+  }
+
+private:
+  int size_;
+  std::vector<bool> graph_;
+};
+
+// Base class for FK-based splitting strategies
+class FKBasedSplitter : public SplitAlgorithm {
+public:
+  FKBasedSplitter(DBAdapter *adapter, BackendEngine engine,
+                  SplitStrategy strategy)
+      : SplitAlgorithm(adapter), engine_(engine), strategy_(strategy),
+        fk_extractor_(adapter, engine) {}
+
+  void Preprocess(std::unique_ptr<ir_sql_converter::SimplestStmt> &ir) override;
+
+  bool IsComplete(const ir_sql_converter::SimplestStmt *remaining_ir) override;
+
+protected:
+  // Build join graph from IR and FK information (implements PostgreSQL's
+  // List2Graph)
+  void BuildJoinGraph(const ir_sql_converter::SimplestStmt *ir);
+
+  // Collect table scans from IR
+  std::map<unsigned int, std::string>
+  CollectTables(const ir_sql_converter::SimplestStmt *ir);
+
+  // Collect join conditions from IR - returns pairs of (table1_idx, table2_idx)
+  std::vector<std::pair<unsigned int, unsigned int>>
+  CollectJoinConditions(const ir_sql_converter::SimplestStmt *ir);
+
+  // Mark entity vs relationship tables based on FK
+  // Referenced tables = entities (is_relationship[i] = false)
+  // Referencing tables = relationships (is_relationship[i] = true)
+  std::vector<bool>
+  MarkEntityRelationship(const ForeignKeyGraph &fk_graph,
+                         const std::map<unsigned int, std::string> &tables);
+
+  // Helper to collect table indices from a node
+  std::set<unsigned int>
+  CollectTableIndices(const ir_sql_converter::SimplestStmt *node) const;
+
+  // Check if a join between two tables is a FK join
+  bool IsFKJoin(unsigned int table1, unsigned int table2) const;
+
+  // Remove redundant FK-FK joins (joins between two relationship tables)
+  // This implements PostgreSQL's rRj (removeRedundantJoin) function
+  std::vector<std::pair<unsigned int, unsigned int>>
+  RemoveRedundantJoins(const std::vector<std::pair<unsigned int, unsigned int>> &joins) const;
+
+  // Generate SQL for a cluster of tables (for cost estimation)
+  // Returns empty string if generation fails
+  std::string GenerateSQLForCluster(const std::vector<int> &cluster,
+                                    ir_sql_converter::SimplestStmt *ir);
+
+  // Get estimated cost for a cluster using adapter's EXPLAIN
+  // Returns {cost, rows}
+  std::pair<double, double> GetClusterCost(const std::vector<int> &cluster,
+                                           ir_sql_converter::SimplestStmt *ir);
+
+  // Find the sub-IR node that represents the join of the given cluster tables
+  // Returns the lowest common ancestor node that contains all cluster tables
+  ir_sql_converter::SimplestStmt *
+  FindSubIRForCluster(ir_sql_converter::SimplestStmt *ir,
+                      const std::set<unsigned int> &cluster_tables);
+
+  // Helper: Check if a node contains all the specified tables (and only those)
+  bool NodeContainsExactlyTables(ir_sql_converter::SimplestStmt *node,
+                                 const std::set<unsigned int> &target_tables);
+
+  // Helper: Check if a node contains any of the specified tables
+  bool NodeContainsAnyTable(ir_sql_converter::SimplestStmt *node,
+                            const std::set<unsigned int> &target_tables);
+
+  // Build a new sub-IR containing only the specified cluster tables
+  // This is equivalent to PostgreSQL's createQuery() function
+  std::unique_ptr<ir_sql_converter::SimplestStmt>
+  BuildSubIRForCluster(ir_sql_converter::SimplestStmt *ir,
+                       const std::set<unsigned int> &cluster_tables);
+
+  // Helper: Collect Scan nodes for specified tables
+  std::vector<ir_sql_converter::SimplestScan *>
+  CollectScansForTables(ir_sql_converter::SimplestStmt *ir,
+                        const std::set<unsigned int> &tables);
+
+  // Helper: Collect join conditions that involve only the specified tables
+  std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
+  CollectJoinConditionsForTables(ir_sql_converter::SimplestStmt *ir,
+                                 const std::set<unsigned int> &tables);
+
+  // Helper: Collect filter conditions that involve only the specified tables
+  std::vector<std::unique_ptr<ir_sql_converter::SimplestExpr>>
+  CollectFilterConditionsForTables(ir_sql_converter::SimplestStmt *ir,
+                                   const std::set<unsigned int> &tables);
+
+  BackendEngine engine_;
+  SplitStrategy strategy_;
+  ForeignKeyExtractor fk_extractor_;
+
+  // Current state
+  JoinGraph join_graph_;
+  std::map<unsigned int, std::string> table_index_to_name_;
+  std::map<std::string, unsigned int> table_name_to_index_;
+  ForeignKeyGraph fk_graph_;
+  std::vector<bool> is_relationship_;
+
+  int split_iteration_ = 0;
+};
+
+// ===== MinSubquery Strategy =====
+// Finds pairs of tables to join (smallest possible subqueries)
+class MinSubquerySplitter : public FKBasedSplitter {
+public:
+  MinSubquerySplitter(DBAdapter *adapter, BackendEngine engine)
+      : FKBasedSplitter(adapter, engine, SplitStrategy::MIN_SUBQUERY) {}
+
+  std::unique_ptr<SubqueryExtraction>
+  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
+
+  std::string GetStrategyName() const override { return "MinSubquery"; }
+
+private:
+  // Find next pair of tables that have a join edge (cost-based selection)
+  std::pair<int, int> FindNextPair(ir_sql_converter::SimplestStmt *ir);
+};
+
+// ===== RelationshipCenter Strategy =====
+// Joins relationship tables with all connected entity tables
+class RelationshipCenterSplitter : public FKBasedSplitter {
+public:
+  RelationshipCenterSplitter(DBAdapter *adapter, BackendEngine engine)
+      : FKBasedSplitter(adapter, engine, SplitStrategy::RELATIONSHIP_CENTER) {}
+
+  std::unique_ptr<SubqueryExtraction>
+  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
+
+  std::string GetStrategyName() const override { return "RelationshipCenter"; }
+
+private:
+  // Find next relationship table and its connected entities (cost-based selection)
+  std::vector<int> FindRelationshipCluster(ir_sql_converter::SimplestStmt *ir);
+};
+
+// ===== EntityCenter Strategy =====
+// Joins entity tables with all connected relationship tables
+class EntityCenterSplitter : public FKBasedSplitter {
+public:
+  EntityCenterSplitter(DBAdapter *adapter, BackendEngine engine)
+      : FKBasedSplitter(adapter, engine, SplitStrategy::ENTITY_CENTER) {}
+
+  std::unique_ptr<SubqueryExtraction>
+  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
+
+  std::string GetStrategyName() const override { return "EntityCenter"; }
+
+private:
+  // Find next entity table and its connected relationships (cost-based selection)
+  std::vector<int> FindEntityCluster(ir_sql_converter::SimplestStmt *ir);
+};
+
+} // namespace middleware

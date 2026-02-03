@@ -12,7 +12,7 @@
 #include <vector>
 
 #define DEBUG_MIDDLEWARE true
-#define MEASURE_SINGLE_QUERY false
+#define MEASURE_SINGLE_QUERY true
 
 namespace middleware {
 bool ends_with_sql(const std::string &filename);

@@ -38,12 +38,16 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
     else if (arg.find("--db=") == 0) {
       config.db_path_or_connection = arg.substr(5);
     }
+    // Parse --schema=<value> (for PostgreSQL column index lookup)
+    else if (arg.find("--schema=") == 0) {
+      config.schema_path = arg.substr(9);
+    }
     // Parse --split=<value>
     else if (arg.find("--split=") == 0) {
       std::string strategy_str = to_lower(arg.substr(8));
       if (strategy_str == "none") {
         config.strategy = SplitStrategy::NONE;
-      } else if (strategy_str == "topdown" || strategy_str == "top-down") {
+      } else if (strategy_str == "topdown" || strategy_str == "top_down") {
         config.strategy = SplitStrategy::TOP_DOWN;
       } else if (strategy_str == "minsubquery" ||
                  strategy_str == "min-subquery") {
@@ -94,6 +98,9 @@ void ParamConfig::PrintUsage() {
   std::cout
       << "  --split=<strategy>               Split strategy (default: none)"
       << std::endl;
+  std::cout << "  --schema=<path>                  Schema SQL file for column "
+               "index lookup (PostgreSQL)"
+            << std::endl;
   std::cout << "    Strategies: none, topdown, minsubquery, "
                "relationship-center, entity-center"
             << std::endl;

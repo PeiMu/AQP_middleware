@@ -59,6 +59,20 @@ private:
   BuildJoinMap(const std::vector<std::unique_ptr<
                    ir_sql_converter::SimplestVarComparison>> &join_conds);
 
+  // Preserve top-level operators (PROJECTION, AGGREGATE, etc.)
+  // and attach reordered join tree underneath
+  std::unique_ptr<ir_sql_converter::SimplestStmt> PreserveTopOperators(
+      std::unique_ptr<ir_sql_converter::SimplestStmt> original_ir,
+      std::unique_ptr<ir_sql_converter::SimplestStmt> reordered_join_tree);
+
+  // Recursively find and replace the join subtree
+  std::unique_ptr<ir_sql_converter::SimplestStmt> ReplaceJoinSubtree(
+      std::unique_ptr<ir_sql_converter::SimplestStmt> node,
+      std::unique_ptr<ir_sql_converter::SimplestStmt> new_subtree);
+
+  // Helper to get node type name for logging
+  std::string GetNodeTypeName(ir_sql_converter::SimplestNodeType type) const;
+
   DBAdapter *adapter_;
 };
 

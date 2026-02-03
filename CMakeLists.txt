@@ -8,20 +8,22 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Build split library (common for both DuckDB and PostgreSQL)
 add_library(split_lib STATIC
         src/util/param_config.cpp
-    src/split/split_algorithm.cpp
-    src/split/ir_reorder_get.cpp
-    src/split/foreign_key_extractor.cpp
-    src/split/topdown_splitter.cpp
+        src/split/split_algorithm.cpp
+        src/split/ir_reorder_get.cpp
+        src/split/foreign_key_extractor.cpp
+        src/split/fk_based_splitter.cpp
+        src/split/topdown_splitter.cpp
+        src/split/ir_query_splitter.cpp
 )
 
 target_include_directories(split_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # DuckDB
-set(DUCKDB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../duckdb" CACHE PATH "DuckDB source path")
+set(DUCKDB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../duckdb_010" CACHE PATH "DuckDB source path")
 set(HAVE_DUCKDB FALSE)
-if(EXISTS ${DUCKDB_ROOT})
+if (EXISTS ${DUCKDB_ROOT})
     message(STATUS "Found DuckDB source at: ${DUCKDB_ROOT}")
 
     include_directories(${DUCKDB_ROOT}/src/include)
@@ -32,7 +34,7 @@ if(EXISTS ${DUCKDB_ROOT})
             NO_DEFAULT_PATH
     )
 
-    if(DUCKDB_LIB)
+    if (DUCKDB_LIB)
         set(HAVE_DUCKDB TRUE)
         add_library(duckdb_adapter STATIC src/adapters/duckdb_adapter.cpp src/util/util.cpp)
         target_include_directories(duckdb_adapter PUBLIC
@@ -42,6 +44,7 @@ if(EXISTS ${DUCKDB_ROOT})
 
         # Define HAVE_DUCKDB preprocessor macro for C++ code
         target_compile_definitions(duckdb_adapter PUBLIC HAVE_DUCKDB)
+        target_compile_definitions(split_lib PUBLIC HAVE_DUCKDB)
 
         target_link_libraries(duckdb_adapter PUBLIC ${DUCKDB_LIB} split_lib)
 
@@ -49,17 +52,17 @@ if(EXISTS ${DUCKDB_ROOT})
         target_link_libraries(test_duckdb PRIVATE duckdb_adapter split_lib)
 
         message(STATUS "DuckDB adapter: ENABLED")
-    else()
+    else ()
         message(WARNING "DUCKDB_LIB not found")
-    endif()
-else()
+    endif ()
+else ()
     message(WARNING "DuckDB source not found")
-endif()
+endif ()
 
 # PostgreSQL
 set(POSTGRES_ROOT "/home/pei/Project/project_bins" CACHE PATH "PostgreSQL lib/inc path")
 set(HAVE_POSTGRES FALSE)
-if(EXISTS ${POSTGRES_ROOT})
+if (EXISTS ${POSTGRES_ROOT})
     message(STATUS "Found PostgreSQL lib/inc at: ${POSTGRES_ROOT}")
 
     include_directories(
@@ -72,7 +75,7 @@ if(EXISTS ${POSTGRES_ROOT})
             NO_DEFAULT_PATH
     )
 
-    if(LIBPQ_LIB)
+    if (LIBPQ_LIB)
         set(HAVE_POSTGRES TRUE)
         add_library(postgres_adapter STATIC src/adapters/postgres_adapter.cpp src/util/util.cpp)
         target_include_directories(postgres_adapter PUBLIC
@@ -81,6 +84,7 @@ if(EXISTS ${POSTGRES_ROOT})
 
         # Define HAVE_POSTGRES preprocessor macro for C++ code
         target_compile_definitions(postgres_adapter PUBLIC HAVE_POSTGRES)
+        target_compile_definitions(split_lib PUBLIC HAVE_POSTGRES)
 
         target_link_libraries(postgres_adapter PUBLIC ${LIBPQ_LIB} split_lib)
 
@@ -88,16 +92,16 @@ if(EXISTS ${POSTGRES_ROOT})
         target_link_libraries(test_postgres PRIVATE postgres_adapter split_lib)
 
         message(STATUS "PostgreSQL adapter: ENABLED")
-    else()
+    else ()
         message(WARNING "LIBPQ_LIB not found")
     endif ()
-else()
+else ()
     message(WARNING "PostgreSQL source not found")
-endif()
+endif ()
 
 # libpg_query
 set(LIBPG_QUERY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../libpg_query" CACHE PATH "libpg_query source path")
-if(EXISTS ${LIBPG_QUERY_ROOT})
+if (EXISTS ${LIBPG_QUERY_ROOT})
     message(STATUS "Found libpg_query at: ${LIBPG_QUERY_ROOT}")
 
     include_directories(${LIBPG_QUERY_ROOT})
@@ -108,20 +112,20 @@ if(EXISTS ${LIBPG_QUERY_ROOT})
             NO_DEFAULT_PATH
     )
 
-    if(LIBPG_QUERY_LIB AND HAVE_POSTGRES)
+    if (LIBPG_QUERY_LIB AND HAVE_POSTGRES)
         target_link_libraries(postgres_adapter PUBLIC ${LIBPG_QUERY_LIB})
         message(STATUS "libpg_query: ENABLED")
-    else()
+    else ()
         message(WARNING "LIBPG_QUERY_LIB not found or not have PostgreSQL")
-    endif()
-else()
+    endif ()
+else ()
     message(WARNING "libpg_query not found at ${LIBPG_QUERY_ROOT}")
-endif()
+endif ()
 
 
 # IR_SQL_Converter
 set(IR_CONVERTER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../IR_SQL_Converter" CACHE PATH "IR_SQL_Converter source path")
-if(EXISTS ${IR_CONVERTER_ROOT})
+if (EXISTS ${IR_CONVERTER_ROOT})
     message(STATUS "Found IR_SQL_Converter at: ${IR_CONVERTER_ROOT}")
 
     # Include IR_SQL_Converter headers
@@ -142,42 +146,42 @@ if(EXISTS ${IR_CONVERTER_ROOT})
     # Link IR_CONVERTER to split_lib since it uses SimplestIR types
     target_link_libraries(split_lib PUBLIC ${IR_CONVERTER_LIB})
 
-    if(HAVE_DUCKDB)
+    if (HAVE_DUCKDB)
         target_link_libraries(test_duckdb PUBLIC ${IR_CONVERTER_LIB})
-    endif()
-    if(HAVE_POSTGRES)
+    endif ()
+    if (HAVE_POSTGRES)
         target_link_libraries(test_postgres PUBLIC ${IR_CONVERTER_LIB})
-    endif()
+    endif ()
 
     # Build aqp_middleware executable (unified target for both engines)
-    if(HAVE_DUCKDB AND HAVE_POSTGRES)
+    if (HAVE_DUCKDB AND HAVE_POSTGRES)
         add_executable(aqp_middleware src/aqp_middleware.cpp)
         target_link_libraries(aqp_middleware PRIVATE
-            duckdb_adapter
-            postgres_adapter
-            split_lib
-            ${IR_CONVERTER_LIB}
+                duckdb_adapter
+                postgres_adapter
+                split_lib
+                ${IR_CONVERTER_LIB}
         )
         message(STATUS "aqp_middleware: ENABLED (supports both DuckDB and PostgreSQL)")
-    elseif(HAVE_DUCKDB)
+    elseif (HAVE_DUCKDB)
         add_executable(aqp_middleware src/aqp_middleware.cpp)
         target_link_libraries(aqp_middleware PRIVATE
-            duckdb_adapter
-            split_lib
-            ${IR_CONVERTER_LIB}
+                duckdb_adapter
+                split_lib
+                ${IR_CONVERTER_LIB}
         )
         message(STATUS "aqp_middleware: ENABLED (DuckDB only)")
-    elseif(HAVE_POSTGRES)
+    elseif (HAVE_POSTGRES)
         add_executable(aqp_middleware src/aqp_middleware.cpp)
         target_link_libraries(aqp_middleware PRIVATE
-            postgres_adapter
-            split_lib
-            ${IR_CONVERTER_LIB}
+                postgres_adapter
+                split_lib
+                ${IR_CONVERTER_LIB}
         )
         message(STATUS "aqp_middleware: ENABLED (PostgreSQL only)")
-    else()
+    else ()
         message(WARNING "aqp_middleware: DISABLED (no database adapter available)")
-    endif()
-else()
+    endif ()
+else ()
     message(WARNING "IR_SQL_Converter source not found at ${IR_CONVERTER_ROOT}")
-endif()
+endif ()

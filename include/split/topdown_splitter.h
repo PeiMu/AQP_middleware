@@ -1,6 +1,6 @@
 /*
  * TopDown split strategy implementation
- * Splits query at pipeline breakers (joins, aggregates) in top-down order
+ * Splits at FILTER nodes or JOIN nodes (build side)
  */
 
 #pragma once
@@ -29,26 +29,22 @@ public:
   std::string GetStrategyName() const override { return "TopDown"; }
 
 private:
-  // Traverse IR top-down to find next split point
-  void VisitOperator(ir_sql_converter::SimplestStmt *node);
+  // Visit operator tree and identify split points
+  void VisitOperator(ir_sql_converter::SimplestStmt *node, bool is_top_most);
 
-  // Identify pipeline breakers (joins, aggregates)
-  bool IsPipelineBreaker(const ir_sql_converter::SimplestStmt *node) const;
-
-  // Collect all table indices used in a subtree
+  // Collect all table indices in a subtree
   std::set<unsigned int>
   CollectTableIndices(const ir_sql_converter::SimplestStmt *node) const;
 
   // Count number of base tables (scans) in the IR
   int CountBaseTables(const ir_sql_converter::SimplestStmt *node) const;
 
-  // Find the top-most pipeline breaker
-  ir_sql_converter::SimplestStmt *
-  FindTopPipelineBreaker(ir_sql_converter::SimplestStmt *node);
+  // Helper to get node type name for debugging
+  std::string GetNodeTypeName(ir_sql_converter::SimplestNodeType type) const;
 
-  // Extract projection head (columns needed by parent operations)
-  std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
-  ExtractProjectionHead(const ir_sql_converter::SimplestStmt *node);
+  bool
+  CheckSameTableInSubtree(ir_sql_converter::SimplestStmt *node,
+                          std::unordered_set<std::string> &seen_tables) const;
 
   IRReorderGet reorder_get_;
   bool enable_reorder_;
@@ -56,8 +52,16 @@ private:
   // Track which tables have been executed
   std::set<unsigned int> executed_tables_;
 
+  ir_sql_converter::SimplestStmt *sub_ir = nullptr;
+
+  // Current subquery index
+  int query_split_index_ = 0;
+
   // Iteration counter
   int split_iteration_ = 0;
+
+  // table_index -> table_name
+  std::unordered_map<unsigned int, std::string> table_names_;
 };
 
 } // namespace middleware

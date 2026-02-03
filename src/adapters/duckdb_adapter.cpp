@@ -113,8 +113,6 @@ void DuckDBAdapter::PostOptimizePlan() {
   if (context->transaction.IsAutoCommit()) {
     context->transaction.Commit();
   }
-
-  return;
 }
 
 void *DuckDBAdapter::GetLogicalPlan() {
@@ -217,9 +215,13 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(const std::string &sql) {
   auto created_table = catalog.CreateTable(*context, std::move(info));
   auto &created_table_entry = created_table->Cast<duckdb::TableCatalogEntry>();
   int64_t created_table_size = subquery_result.Count();
-  temp_table_card.emplace(intermediate_table_name, created_table_size);
+  temp_table_card_.emplace(intermediate_table_name, created_table_size);
+//  const duckdb::vector<duckdb::unique_ptr<duckdb::BoundConstraint>>
+//      bound_constraints = planner->binder->BindConstraints(created_table_entry);
 
   auto &storage = created_table_entry.GetStorage();
+//  storage.LocalAppend(created_table_entry, *context, subquery_result,
+//                      bound_constraints, nullptr);
   storage.LocalAppend(created_table_entry, *context, subquery_result);
 
   // Commit transaction if in auto-commit mode
@@ -259,7 +261,7 @@ void DuckDBAdapter::CreateTempTable(const std::string &table_name,
   //  auto &created_table_entry =
   //  created_table->Cast<duckdb::TableCatalogEntry>(); int64_t
   //  created_table_size = subquery_result->Count();
-  //  temp_table_card.emplace(intermediate_table_name, created_table_size);
+  //  temp_table_card_.emplace(intermediate_table_name, created_table_size);
   //
   //  auto &storage = created_table_entry.GetStorage();
   //  storage.LocalAppend(created_table_entry, *context, *subquery_result);
@@ -280,6 +282,86 @@ bool DuckDBAdapter::TempTableExists(const std::string &table_name) {
   }
 }
 
+uint64_t
+DuckDBAdapter::GetTempTableCardinality(const std::string &temp_table_name) {
+  if (temp_table_card_.count(temp_table_name)) {
+    return temp_table_card_[temp_table_name];
+  }
+  return 0; // Default if not found
+}
+
+std::pair<double, double>
+DuckDBAdapter::GetEstimatedCost(const std::string &sql) {
+  // Use EXPLAIN to get estimated cost and rows
+  // DuckDB's EXPLAIN output format: we'll parse the cardinality from it
+  try {
+    std::string explain_sql = "EXPLAIN " + sql;
+    auto duckdb_result = conn->Query(explain_sql);
+
+    if (duckdb_result->HasError()) {
+      std::cerr << "[DuckDB] EXPLAIN failed: " << duckdb_result->GetError()
+                << std::endl;
+      return {std::numeric_limits<double>::max(),
+              std::numeric_limits<double>::max()};
+    }
+
+    // DuckDB doesn't expose cost directly like PostgreSQL
+    // We'll estimate based on the plan - use cardinality as proxy
+    // Parse the EXPLAIN output to find estimated cardinality
+
+    double estimated_rows = 0.0;
+    double estimated_cost = 0.0;
+
+    // Collect all output lines
+    std::string explain_output;
+    while (true) {
+      auto chunk = duckdb_result->Fetch();
+      if (!chunk || chunk->size() == 0)
+        break;
+
+      for (size_t row = 0; row < chunk->size(); row++) {
+        explain_output += chunk->GetValue(0, row).ToString() + "\n";
+      }
+    }
+
+    // Parse cardinality from EXPLAIN output
+    // DuckDB format shows "~X" for estimated rows
+    // Look for patterns like "~1000" or "EC: 1000"
+    size_t pos = 0;
+    while ((pos = explain_output.find("~", pos)) != std::string::npos) {
+      pos++;
+      size_t end = pos;
+      while (end < explain_output.size() &&
+             (std::isdigit(explain_output[end]) || explain_output[end] == '.')) {
+        end++;
+      }
+      if (end > pos) {
+        double rows = std::stod(explain_output.substr(pos, end - pos));
+        if (rows > estimated_rows) {
+          estimated_rows = rows; // Take the max cardinality as estimate
+        }
+      }
+    }
+
+    // If we couldn't parse cardinality, use a default
+    if (estimated_rows == 0.0) {
+      estimated_rows = 1000.0; // Default fallback
+    }
+
+    // DuckDB doesn't have cost in the same way as PostgreSQL
+    // Use estimated_rows as a proxy for cost
+    estimated_cost = estimated_rows;
+
+    return {estimated_cost, estimated_rows};
+
+  } catch (const std::exception &e) {
+    std::cerr << "[DuckDB] GetEstimatedCost exception: " << e.what()
+              << std::endl;
+    return {std::numeric_limits<double>::max(),
+            std::numeric_limits<double>::max()};
+  }
+}
+
 void DuckDBAdapter::CleanUp() {
   plan.reset();
   planner.reset();
@@ -287,7 +369,7 @@ void DuckDBAdapter::CleanUp() {
   db.reset();
   table_column_mappings.clear();
   intermediate_table_map.clear();
-  temp_table_card.clear();
+  temp_table_card_.clear();
 }
 
 duckdb::ClientContext *DuckDBAdapter::GetClientContext() {

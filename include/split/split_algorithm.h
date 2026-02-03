@@ -14,20 +14,32 @@ namespace middleware {
 
 // Result of extracting a subquery
 struct SubqueryExtraction {
-  // The sub-IR to execute (a portion of the full query)
-  std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir;
-
   // Set of table indices that will be executed in this subquery
   std::set<unsigned int> executed_table_indices;
 
   // Optional: name for the temporary table to create
   std::string temp_table_name;
 
-  SubqueryExtraction(std::unique_ptr<ir_sql_converter::SimplestStmt> ir,
-                     std::set<unsigned int> table_indices,
+  // The built sub-IR for this subquery (owns the IR)
+  // This is the NEW sub-IR built from cluster tables
+  std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir;
+
+  // Pointer to the node in the original tree that represents this subquery
+  // Used as fallback when we can't build a new sub-IR
+  ir_sql_converter::SimplestStmt *pipeline_breaker_ptr = nullptr;
+
+  SubqueryExtraction(std::set<unsigned int> table_indices,
                      std::string temp_name = "")
-      : sub_ir(std::move(ir)), executed_table_indices(std::move(table_indices)),
+      : executed_table_indices(std::move(table_indices)),
         temp_table_name(std::move(temp_name)) {}
+
+  // Get the IR to execute (prefers sub_ir over pipeline_breaker_ptr)
+  ir_sql_converter::SimplestStmt *GetExecutableIR() const {
+    if (sub_ir) {
+      return sub_ir.get();
+    }
+    return pipeline_breaker_ptr;
+  }
 };
 
 class SplitAlgorithm {

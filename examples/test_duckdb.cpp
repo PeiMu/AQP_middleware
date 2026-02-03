@@ -165,7 +165,7 @@ int test_benchmark(middleware::DuckDBAdapter *adapter,
 int main() {
   // Create adapter
   auto adapter = std::make_unique<middleware::DuckDBAdapter>(
-      "/home/pei/Project/duckdb/measure/imdb.db");
+      "/home/pei/Project/duckdb_010/measure/imdb.db");
 
 #if MEASURE_SINGLE_QUERY
   // test single query - example

@@ -30,7 +30,8 @@ struct ParamConfig {
   bool benchmark_mode = false; // false = single query, true = benchmark
 
   // Paths
-  std::string query_path; // Either single .sql file or directory for benchmark
+  std::string query_path;  // Either single .sql file or directory for benchmark
+  std::string schema_path; // Path to schema.sql for column index lookup (PostgreSQL only)
 
   // Options
   bool enable_reorder_get = true; // Only applies when strategy=TOP_DOWN

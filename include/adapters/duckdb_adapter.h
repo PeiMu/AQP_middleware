@@ -23,6 +23,7 @@
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/binder.hpp"
+#include "duckdb/planner/bound_constraint.hpp"
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "duckdb/storage/data_table.hpp"
@@ -51,6 +52,8 @@ public:
 
   void *GetLogicalPlan();
 
+  void PrintLogicalPlan() { plan->Print(); };
+
   // Convert logical plan to IR
   std::unique_ptr<ir_sql_converter::SimplestStmt> ConvertPlanToIR() override;
 
@@ -65,6 +68,11 @@ public:
   void DropTempTable(const std::string &table_name) override;
 
   bool TempTableExists(const std::string &table_name) override;
+
+  uint64_t GetTempTableCardinality(const std::string &temp_table_name) override;
+
+  // Get estimated cost and rows for a query using EXPLAIN
+  std::pair<double, double> GetEstimatedCost(const std::string &sql) override;
 
   std::string GetEngineName() const override { return "DuckDB"; }
 
@@ -96,8 +104,5 @@ private:
 
   // <temp%, subquery_dd_index>
   std::unordered_map<unsigned int, std::string> intermediate_table_map;
-
-  // std::string intermediate_table_name, int64_t created_table_size
-  std::unordered_map<std::string, int64_t> temp_table_card;
 };
 } // namespace middleware

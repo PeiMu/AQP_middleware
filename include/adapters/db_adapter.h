@@ -54,10 +54,21 @@ public:
 
   virtual bool TempTableExists(const std::string &table_name) = 0;
 
+  // Get cardinality of temp table after execution
+  virtual uint64_t
+  GetTempTableCardinality(const std::string &temp_table_name) = 0;
+
+  // Get estimated cost and rows for a query using EXPLAIN
+  // Returns {estimated_cost, estimated_rows}
+  virtual std::pair<double, double> GetEstimatedCost(const std::string &sql) = 0;
+
   virtual std::string GetEngineName() const = 0;
 
   virtual void CleanUp() = 0;
 
   unsigned int subquery_index = 1;
+
+  // std::string intermediate_table_name, int64_t created_table_size
+  std::unordered_map<std::string, int64_t> temp_table_card_;
 };
 } // namespace middleware

@@ -48,6 +48,11 @@ public:
 
   bool TempTableExists(const std::string &table_name) override;
 
+  uint64_t GetTempTableCardinality(const std::string &temp_table_name) override;
+
+  // Get estimated cost and rows for a query using EXPLAIN
+  std::pair<double, double> GetEstimatedCost(const std::string &sql) override;
+
   std::string GetEngineName() const override { return "PostgreSQL"; }
 
   void CleanUp() override;

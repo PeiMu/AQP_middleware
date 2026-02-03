@@ -5,15 +5,16 @@
  */
 
 #include "adapters/db_adapter.h"
+#include "split/ir_query_splitter.h"
 #include "util/param_config.h"
 #include "util/util.h"
 
 // Include both adapters (conditionally compiled based on availability)
-#if defined(HAVE_DUCKDB)
+#ifdef HAVE_DUCKDB
 #include "adapters/duckdb_adapter.h"
 #endif
 
-#if defined(HAVE_POSTGRES)
+#ifdef HAVE_POSTGRES
 #include "adapters/postgres_adapter.h"
 #endif
 
@@ -82,62 +83,44 @@ void ExecuteSingleQuery(DBAdapter *adapter, const std::string &sql_file_path,
       std::cout << "Original SQL:\n" << sql << std::endl;
     }
 
+    QueryResult query_result;
+    auto exec_start = std::chrono::high_resolution_clock::now();
+
     if (config.NeedsSplit()) {
-      // Execute with split strategy
+      // Execute with split strategy using IRQuerySplitter
       std::cout << "\n=== Execution with Split Strategy: "
                 << config.GetStrategyName() << " ===" << std::endl;
 
-      // TODO: Implement split execution using IRQuerySplitter
-      std::cout << "[AQP Middleware] TODO: Implement split execution pipeline"
-                << std::endl;
+      // Create IRQuerySplitter with the selected strategy
+      IRQuerySplitter splitter(adapter, config);
 
-      // For now, just do direct execution
-      auto exec_start = std::chrono::high_resolution_clock::now();
-      auto query_result = adapter->ExecuteSQL(sql);
-      auto exec_end = std::chrono::high_resolution_clock::now();
-
-      result.execution_time_ms =
-          std::chrono::duration<double, std::milli>(exec_end - exec_start)
-              .count();
-      result.num_rows = query_result.num_rows;
-
-      std::cout << "\n=== Query Results ===" << std::endl;
-      std::cout << "Rows: " << query_result.num_rows
-                << ", Columns: " << query_result.num_columns << std::endl;
-
-      if (config.enable_debug_print) {
-        for (const auto &row : query_result.rows) {
-          for (const auto &val : row) {
-            std::cout << val << " ";
-          }
-          std::cout << std::endl;
-        }
-      }
+      // Execute with split
+      query_result = splitter.ExecuteWithSplit(sql);
 
     } else {
       // Direct execution (no split)
       std::cout << "\n=== Direct Execution (No Splitting) ===" << std::endl;
 
-      auto exec_start = std::chrono::high_resolution_clock::now();
-      auto query_result = adapter->ExecuteSQL(sql);
-      auto exec_end = std::chrono::high_resolution_clock::now();
+      query_result = adapter->ExecuteSQL(sql);
+    }
 
-      result.execution_time_ms =
-          std::chrono::duration<double, std::milli>(exec_end - exec_start)
-              .count();
-      result.num_rows = query_result.num_rows;
+    auto exec_end = std::chrono::high_resolution_clock::now();
 
-      std::cout << "\n=== Query Results ===" << std::endl;
-      std::cout << "Rows: " << query_result.num_rows
-                << ", Columns: " << query_result.num_columns << std::endl;
+    result.execution_time_ms =
+        std::chrono::duration<double, std::milli>(exec_end - exec_start)
+            .count();
+    result.num_rows = query_result.num_rows;
 
-      if (config.enable_debug_print) {
-        for (const auto &row : query_result.rows) {
-          for (const auto &val : row) {
-            std::cout << val << " ";
-          }
-          std::cout << std::endl;
+    std::cout << "\n=== Query Results ===" << std::endl;
+    std::cout << "Rows: " << query_result.num_rows
+              << ", Columns: " << query_result.num_columns << std::endl;
+
+    if (config.enable_debug_print) {
+      for (const auto &row : query_result.rows) {
+        for (const auto &val : row) {
+          std::cout << val << " ";
         }
+        std::cout << std::endl;
       }
     }
 
@@ -239,6 +222,17 @@ int main(int argc, char **argv) {
     std::cout << "========================================" << std::endl;
     config.Print();
 
+#ifdef HAVE_POSTGRES
+    // Initialize schema parser for PostgreSQL (needed for correct column indices)
+    if (config.engine == BackendEngine::POSTGRESQL &&
+        !config.schema_path.empty()) {
+      if (!ir_sql_converter::InitSchemaParser(config.schema_path)) {
+        std::cerr << "Warning: Failed to load schema, column indices will be 0"
+                  << std::endl;
+      }
+    }
+#endif
+
     // Create adapter
     auto adapter = CreateAdapter(config);
 
@@ -256,6 +250,11 @@ int main(int argc, char **argv) {
     std::cout << "\n========================================" << std::endl;
     std::cout << "Execution completed" << std::endl;
     std::cout << "========================================" << std::endl;
+
+#ifdef HAVE_POSTGRES
+    // Cleanup schema parser
+    ir_sql_converter::CleanupSchemaParser();
+#endif
 
     return return_code;
 

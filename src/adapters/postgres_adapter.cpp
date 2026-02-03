@@ -48,8 +48,10 @@ PostgreSQLAdapter::ConvertPlanToIR() {
     throw std::runtime_error("No parse tree available. Call ParseSQL first.");
   }
 
+  // Use schema-aware conversion if global schema parser is initialized,
+  // otherwise fall back to basic conversion (column indices will be 0)
   std::unique_ptr<ir_sql_converter::SimplestStmt> stmt =
-      ir_sql_converter::ConvertParseTreeToIR(parse_tree, subquery_index);
+      ir_sql_converter::ConvertParseTreeToIRWithSchema(parse_tree, subquery_index);
   return std::move(stmt);
 }
 
@@ -73,7 +75,7 @@ QueryResult PostgreSQLAdapter::ExecuteSQL(const std::string &sql) {
   // Get column information
   result.num_columns = PQnfields(pg_result);
   for (int i = 0; i < result.num_columns; i++) {
-    result.column_names.push_back(PQfname(pg_result, i));
+    result.column_names.emplace_back(PQfname(pg_result, i));
   }
 
   // Get row data
@@ -87,9 +89,9 @@ QueryResult PostgreSQLAdapter::ExecuteSQL(const std::string &sql) {
     for (int col = 0; col < result.num_columns; col++) {
       // Check if value is NULL
       if (PQgetisnull(pg_result, row, col)) {
-        row_data.push_back("NULL");
+        row_data.emplace_back("NULL");
       } else {
-        row_data.push_back(PQgetvalue(pg_result, row, col));
+        row_data.emplace_back(PQgetvalue(pg_result, row, col));
       }
     }
 
@@ -146,6 +148,58 @@ bool PostgreSQLAdapter::TempTableExists(const std::string &table_name) {
 
   PQclear(pg_result);
   return exists;
+}
+
+uint64_t
+PostgreSQLAdapter::GetTempTableCardinality(const std::string &temp_table_name) {
+  // TODO - get by Explain Analysis
+  return 0;
+}
+
+std::pair<double, double>
+PostgreSQLAdapter::GetEstimatedCost(const std::string &sql) {
+  CheckConnection();
+
+  // Use EXPLAIN (FORMAT JSON) to get structured output with cost and rows
+  std::string explain_sql = "EXPLAIN (FORMAT JSON) " + sql;
+  PGresult *pg_result = PQexec(conn, explain_sql.c_str());
+
+  if (PQresultStatus(pg_result) != PGRES_TUPLES_OK) {
+    std::cerr << "[PostgreSQL] EXPLAIN failed: " << PQerrorMessage(conn)
+              << std::endl;
+    PQclear(pg_result);
+    return {std::numeric_limits<double>::max(),
+            std::numeric_limits<double>::max()};
+  }
+
+  double estimated_cost = std::numeric_limits<double>::max();
+  double estimated_rows = std::numeric_limits<double>::max();
+
+  if (PQntuples(pg_result) > 0 && PQnfields(pg_result) > 0) {
+    std::string json_str = PQgetvalue(pg_result, 0, 0);
+
+    try {
+      json explain_json = json::parse(json_str);
+
+      // PostgreSQL EXPLAIN JSON format:
+      // [{"Plan": {"Total Cost": ..., "Plan Rows": ..., ...}}]
+      if (explain_json.is_array() && !explain_json.empty()) {
+        auto &plan = explain_json[0]["Plan"];
+        if (plan.contains("Total Cost")) {
+          estimated_cost = plan["Total Cost"].get<double>();
+        }
+        if (plan.contains("Plan Rows")) {
+          estimated_rows = plan["Plan Rows"].get<double>();
+        }
+      }
+    } catch (const std::exception &e) {
+      std::cerr << "[PostgreSQL] Failed to parse EXPLAIN JSON: " << e.what()
+                << std::endl;
+    }
+  }
+
+  PQclear(pg_result);
+  return {estimated_cost, estimated_rows};
 }
 
 void PostgreSQLAdapter::CleanUp() {
