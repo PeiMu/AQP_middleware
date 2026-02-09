@@ -24,3 +24,44 @@ File structure:
         ├── duckdb_adapter.cpp
         └── postgres_adapter.cpp
 ```
+
+
+##Configuration
+
+It can select different engines and split strategies.
+
+E.g.,
+```bash
+--engine=postgresql
+--db="host=localhost port=5432 dbname=imdb user=imdb"
+--schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql
+--split=relationshipcenter
+--check-correctness
+--debug
+/home/pei/Project/benchmarks/imdb_job-postgres/queries/1a.sql
+```
+
+Or
+```bash
+--engine=duckdb
+--db="/home/pei/Project/duckdb_010/measure/imdb.db"
+--schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql
+--split=top_down
+--check-correctness
+--debug
+/home/pei/Project/benchmarks/imdb_job-postgres/queries/1a.sql
+```
+
+It can also run the whole benchmark.
+
+E.g.,
+```bash
+--engine=postgresql
+--db="host=localhost port=5432 dbname=imdb user=imdb"
+--schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql
+--split=relationshipcenter
+--check-correctness
+--benchmark
+--debug
+/home/pei/Project/benchmarks/imdb_job-postgres/queries
+```
