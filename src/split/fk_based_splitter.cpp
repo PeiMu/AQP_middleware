@@ -40,7 +40,28 @@ void FKBasedSplitter::Preprocess(
 #endif
   }
 
-  // Step 2: Extract foreign keys
+  // Step 2: Update statistics for PostgreSQL (needed for accurate cost
+  // estimates) DuckDB maintains statistics automatically, so this is only
+  // needed for PostgreSQL
+  if (engine_ == BackendEngine::POSTGRESQL) {
+    for (const auto &[idx, name] : table_index_to_name_) {
+      try {
+        adapter_->ExecuteSQL("ANALYZE " + name);
+      } catch (const std::exception &e) {
+        // ANALYZE failure is not fatal, just log it
+#ifndef NDEBUG
+        std::cerr << "[" << GetStrategyName() << "] Warning: ANALYZE " << name
+                  << " failed: " << e.what() << std::endl;
+#endif
+      }
+    }
+#ifndef NDEBUG
+    std::cout << "[" << GetStrategyName()
+              << "] Updated statistics for query tables" << std::endl;
+#endif
+  }
+
+  // Step 3: Extract foreign keys
   std::set<std::string> table_names;
   for (const auto &[idx, name] : table_index_to_name_) {
     table_names.insert(name);
@@ -52,7 +73,7 @@ void FKBasedSplitter::Preprocess(
   fk_graph_.Print();
 #endif
 
-  // Step 3: Mark entity vs relationship tables
+  // Step 4: Mark entity vs relationship tables
   // Referenced tables (pk_table in FK) = entities
   // Referencing tables (fk_table in FK) = relationships
   is_relationship_ = MarkEntityRelationship(fk_graph_, table_index_to_name_);
@@ -67,7 +88,7 @@ void FKBasedSplitter::Preprocess(
   }
 #endif
 
-  // Step 4: Build join graph (implements PostgreSQL's List2Graph)
+  // Step 5: Build join graph (implements PostgreSQL's List2Graph)
   BuildJoinGraph(ir.get());
 
 #ifndef NDEBUG
@@ -425,14 +446,66 @@ bool FKBasedSplitter::IsComplete(
     }
   }
 
-  bool complete = (remaining_edges == 1);
+  bool complete = false;
+
+  if (strategy_ == SplitStrategy::MIN_SUBQUERY) {
+    // MinSubquery: complete when only 1 edge (pair) remains
+    complete = (remaining_edges == 1);
+#ifndef NDEBUG
+    std::cout << "[" << GetStrategyName()
+              << "] IsComplete: " << (complete ? "YES" : "NO")
+              << " (remaining edges between non-executed tables: "
+              << remaining_edges << ")" << std::endl;
+#endif
+  } else {
+    // EntityCenter/RelationshipCenter: complete when only 1 center remains
+    // For RelationshipCenter: center = relationship table with outgoing edges
+    // For EntityCenter: center = entity table with outgoing edges
+    int remaining_centers = 0;
+    for (int i = 0; i < join_graph_.Size(); i++) {
+      if (executed_tables_.count(i)) {
+        continue; // Skip executed tables
+      }
+
+      // Check if this table qualifies as a center based on strategy
+      bool is_center_type = false;
+      if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
+        // RelationshipCenter: centers are relationship tables
+        is_center_type = (static_cast<size_t>(i) < is_relationship_.size()) &&
+                         is_relationship_[i];
+      } else {
+        // EntityCenter: centers are entity tables
+        is_center_type = (static_cast<size_t>(i) < is_relationship_.size()) &&
+                         !is_relationship_[i];
+      }
+
+      if (!is_center_type) {
+        continue;
+      }
+
+      // Check if this table has any outgoing edges
+      bool has_outgoing = false;
+      for (int j = 0; j < join_graph_.Size(); j++) {
+        if (i == j || executed_tables_.count(j)) {
+          continue;
+        }
+        if (join_graph_.HasEdge(i, j)) {
+          has_outgoing = true;
+          break;
+        }
+      }
+      if (has_outgoing) {
+        remaining_centers++;
+      }
+    }
+    complete = (remaining_centers == 1);
 
 #ifndef NDEBUG
-  std::cout << "[" << GetStrategyName()
-            << "] IsComplete: " << (complete ? "YES" : "NO")
-            << " (remaining edges between non-executed tables: "
-            << remaining_edges << ")" << std::endl;
+    std::cout << "[" << GetStrategyName()
+              << "] IsComplete check: remaining_centers=" << remaining_centers
+              << std::endl;
 #endif
+  }
 
   return complete;
 }
@@ -461,32 +534,27 @@ FKBasedSplitter::GenerateSQLForCluster(const std::vector<int> &cluster,
     first = false;
   }
 
-  // Collect join conditions for tables in the cluster
+  // Collect join conditions for tables in the cluster using actual column names
   std::set<unsigned int> cluster_tables;
   for (int idx : cluster) {
     cluster_tables.insert(static_cast<unsigned int>(idx));
   }
 
-  // Get join conditions from IR
-  auto all_joins = CollectJoinConditions(ir);
+  // Get actual join conditions from IR (with real column names)
+  auto join_conds = ir_utils::CollectJoinConditions(ir, cluster_tables);
   std::vector<std::string> where_clauses;
 
-  for (const auto &[t1, t2] : all_joins) {
-    // Only include joins where both tables are in the cluster
-    if (cluster_tables.count(t1) && cluster_tables.count(t2)) {
-      // Generate a simple join condition
-      // We need the actual column names, but for cost estimation we can use
-      // a placeholder that the optimizer will handle
-      auto it1 = table_index_to_name_.find(t1);
-      auto it2 = table_index_to_name_.find(t2);
-      if (it1 != table_index_to_name_.end() &&
-          it2 != table_index_to_name_.end()) {
-        // Use "1=1" as placeholder - the actual condition doesn't matter much
-        // for cost estimation as long as the join type is correct
-        // For more accurate estimation, we'd need to extract actual column
-        // names
-        where_clauses.push_back(it1->second + ".id = " + it2->second + ".id");
-      }
+  for (const auto &cond : join_conds) {
+    unsigned int left_table = cond->left_attr->GetTableIndex();
+    unsigned int right_table = cond->right_attr->GetTableIndex();
+
+    auto it1 = table_index_to_name_.find(left_table);
+    auto it2 = table_index_to_name_.find(right_table);
+    if (it1 != table_index_to_name_.end() &&
+        it2 != table_index_to_name_.end()) {
+      where_clauses.push_back(
+          it1->second + "." + cond->left_attr->GetColumnName() + " = " +
+          it2->second + "." + cond->right_attr->GetColumnName());
     }
   }
 
@@ -1917,6 +1985,10 @@ FKBasedSplitter::UpdateRemainingIR(
         std::move(limit_base), orig_limit->limit_val, orig_limit->offset_val);
   }
 
+  // Step 7: Update join graph for temp table
+  UpdateJoinGraphForTempTable(executed_table_indices, remaining_tables,
+                              temp_table_index, temp_table_name);
+
 #ifndef NDEBUG
   std::cout
       << "[FKBasedSplitter::UpdateRemainingIR] Built new remaining IR with "
@@ -1926,6 +1998,112 @@ FKBasedSplitter::UpdateRemainingIR(
 #endif
 
   return result;
+}
+
+void FKBasedSplitter::UpdateJoinGraphForTempTable(
+    const std::set<unsigned int> &executed_table_indices,
+    const std::set<unsigned int> &remaining_tables,
+    unsigned int temp_table_index, const std::string &temp_table_name) {
+  // Step 1: Expand join graph to accommodate temp table index
+  int required_size = static_cast<int>(temp_table_index) + 1;
+  if (required_size > join_graph_.Size()) {
+    join_graph_.ExpandToSize(required_size);
+  }
+
+  // Step 2: Expand is_relationship_ vector
+  if (temp_table_index >= is_relationship_.size()) {
+    is_relationship_.resize(temp_table_index + 1, false);
+  }
+
+  // Step 3: Add temp table to table_index_to_name_ mapping
+  table_index_to_name_[temp_table_index] = temp_table_name;
+
+  // Step 4: For each remaining table, check if it was connected to any executed
+  // table If so, add an edge between temp table and that remaining table
+  for (unsigned int remaining_idx : remaining_tables) {
+    bool was_connected = false;
+    for (unsigned int executed_idx : executed_table_indices) {
+      // Check both directions
+      if (join_graph_.HasEdge(static_cast<int>(executed_idx),
+                              static_cast<int>(remaining_idx)) ||
+          join_graph_.HasEdge(static_cast<int>(remaining_idx),
+                              static_cast<int>(executed_idx))) {
+        was_connected = true;
+        break;
+      }
+    }
+
+    if (was_connected) {
+      // Add edge based on strategy (following same pattern as BuildJoinGraph)
+      if (strategy_ == SplitStrategy::MIN_SUBQUERY) {
+        // MinSubquery: symmetric (upper triangular)
+        int i = std::min(static_cast<int>(temp_table_index),
+                         static_cast<int>(remaining_idx));
+        int j = std::max(static_cast<int>(temp_table_index),
+                         static_cast<int>(remaining_idx));
+        join_graph_.SetEdge(i, j, true);
+      } else {
+        // EntityCenter/RelationshipCenter: direction based on
+        // entity/relationship Temp table is treated as relationship
+        // (is_relationship_[temp_table_index] = true)
+        bool remaining_is_relationship =
+            (remaining_idx < is_relationship_.size()) &&
+            is_relationship_[remaining_idx];
+
+        if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
+          // RelationshipCenter: relationship -> entity
+          // temp (relationship) -> remaining (entity): graph[temp][remaining]
+          // temp (relationship) <-> remaining (relationship): bidirectional
+          if (!remaining_is_relationship) {
+            // remaining is entity
+            join_graph_.SetEdge(static_cast<int>(temp_table_index),
+                                static_cast<int>(remaining_idx), true);
+          } else {
+            // both relationships: bidirectional
+            join_graph_.SetEdge(static_cast<int>(temp_table_index),
+                                static_cast<int>(remaining_idx), true);
+            join_graph_.SetEdge(static_cast<int>(remaining_idx),
+                                static_cast<int>(temp_table_index), true);
+          }
+        } else {
+          // EntityCenter: entity -> relationship
+          // remaining (entity) -> temp (relationship): graph[remaining][temp]
+          // remaining (relationship) <-> temp (relationship): bidirectional
+          if (!remaining_is_relationship) {
+            // remaining is entity
+            join_graph_.SetEdge(static_cast<int>(remaining_idx),
+                                static_cast<int>(temp_table_index), true);
+          } else {
+            // both relationships: bidirectional
+            join_graph_.SetEdge(static_cast<int>(temp_table_index),
+                                static_cast<int>(remaining_idx), true);
+            join_graph_.SetEdge(static_cast<int>(remaining_idx),
+                                static_cast<int>(temp_table_index), true);
+          }
+        }
+      }
+
+#ifndef NDEBUG
+      std::cout << "[UpdateJoinGraphForTempTable] Added edge: temp_"
+                << temp_table_index << " <-> " << remaining_idx << std::endl;
+#endif
+    }
+  }
+
+  // Step 5: Remove all edges involving executed tables from the graph
+  // This keeps the graph clean - only remaining tables and temp table have
+  // edges
+  for (unsigned int executed_idx : executed_table_indices) {
+    for (int j = 0; j < join_graph_.Size(); j++) {
+      join_graph_.SetEdge(static_cast<int>(executed_idx), j, false);
+      join_graph_.SetEdge(j, static_cast<int>(executed_idx), false);
+    }
+  }
+
+#ifndef NDEBUG
+  std::cout << "[UpdateJoinGraphForTempTable] Updated join graph:" << std::endl;
+  join_graph_.Print();
+#endif
 }
 
 } // namespace middleware

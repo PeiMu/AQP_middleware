@@ -47,6 +47,25 @@ public:
 
   int Size() const { return size_; }
 
+  // Expand graph to accommodate a new table index
+  // Preserves existing edges
+  void ExpandToSize(int new_size) {
+    if (new_size <= size_) {
+      return;
+    }
+    std::vector<bool> new_graph(new_size * new_size, false);
+    // Copy existing edges
+    for (int i = 0; i < size_; i++) {
+      for (int j = 0; j < size_; j++) {
+        if (graph_[i * size_ + j]) {
+          new_graph[i * new_size + j] = true;
+        }
+      }
+    }
+    graph_ = std::move(new_graph);
+    size_ = new_size;
+  }
+
   // Count remaining edges
   int CountEdges() const {
     int count = 0;
@@ -160,6 +179,15 @@ protected:
   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
   CollectExternalJoinAttrs(ir_sql_converter::SimplestStmt *ir,
                            const std::set<unsigned int> &cluster_tables);
+
+  // Update join graph after creating a temp table:
+  // - Remove edges for executed (cluster) tables
+  // - Add edges from temp table to remaining tables that were connected to
+  // cluster
+  void UpdateJoinGraphForTempTable(
+      const std::set<unsigned int> &executed_table_indices,
+      const std::set<unsigned int> &remaining_tables,
+      unsigned int temp_table_index, const std::string &temp_table_name);
 
   // Update remaining IR by rebuilding (PostgreSQL style)
   // Because cluster tables may be scattered throughout the tree
