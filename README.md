@@ -1,3 +1,8 @@
+## Clone Project
+```bash
+git clone --recurse-submodules git@github.com:PeiMu/AQP_middleware.git
+```
+
 ## How to compile
 ```bash
 mkdir -p build_debug && cd build_debug/

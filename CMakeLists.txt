@@ -123,34 +123,31 @@ else ()
 endif ()
 
 
-# IR_SQL_Converter
-set(IR_CONVERTER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../IR_SQL_Converter" CACHE PATH "IR_SQL_Converter source path")
-if (EXISTS ${IR_CONVERTER_ROOT})
-    message(STATUS "Found IR_SQL_Converter at: ${IR_CONVERTER_ROOT}")
+# IR_SQL_Converter (built from source via submodule for full debug support)
+set(IR_CONVERTER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/IR_SQL_Converter")
+if (EXISTS ${IR_CONVERTER_ROOT}/CMakeLists.txt)
+    message(STATUS "Building IR_SQL_Converter from source at: ${IR_CONVERTER_ROOT}")
 
-    # Include IR_SQL_Converter headers
+    # Configure IR_SQL_Converter options before add_subdirectory
+    set(DUCKDB_VERSION_010 ON CACHE BOOL "Build IR_SQL_Converter against DuckDB 0.10.1" FORCE)
+    set(BUILD_TESTING OFF CACHE BOOL "Disable IR_SQL_Converter tests" FORCE)
+
+    add_subdirectory(${IR_CONVERTER_ROOT} ${CMAKE_BINARY_DIR}/IR_SQL_Converter)
+
+    # Include IR_SQL_Converter headers (not propagated via target properties)
     include_directories(
             ${IR_CONVERTER_ROOT}/inc
             ${IR_CONVERTER_ROOT}/third_party/libpg_query/include
     )
 
-    # Find IR_SQL_Converter library
-    find_library(IR_CONVERTER_LIB
-            NAMES IR_SQL_Converter libIR_SQL_Converter IR_SQL_Converter_static
-            PATHS
-            ${IR_CONVERTER_ROOT}/lib
-            ${IR_CONVERTER_ROOT}/build/lib
-            NO_DEFAULT_PATH
-    )
-
     # Link IR_CONVERTER to split_lib since it uses SimplestIR types
-    target_link_libraries(split_lib PUBLIC ${IR_CONVERTER_LIB})
+    target_link_libraries(split_lib PUBLIC IR_SQL_Converter_static)
 
     if (HAVE_DUCKDB)
-        target_link_libraries(test_duckdb PUBLIC ${IR_CONVERTER_LIB})
+        target_link_libraries(test_duckdb PUBLIC IR_SQL_Converter_static)
     endif ()
     if (HAVE_POSTGRES)
-        target_link_libraries(test_postgres PUBLIC ${IR_CONVERTER_LIB})
+        target_link_libraries(test_postgres PUBLIC IR_SQL_Converter_static)
     endif ()
 
     # Build aqp_middleware executable (unified target for both engines)
@@ -160,7 +157,7 @@ if (EXISTS ${IR_CONVERTER_ROOT})
                 duckdb_adapter
                 postgres_adapter
                 split_lib
-                ${IR_CONVERTER_LIB}
+                IR_SQL_Converter_static
         )
         message(STATUS "aqp_middleware: ENABLED (supports both DuckDB and PostgreSQL)")
     elseif (HAVE_DUCKDB)
@@ -168,7 +165,7 @@ if (EXISTS ${IR_CONVERTER_ROOT})
         target_link_libraries(aqp_middleware PRIVATE
                 duckdb_adapter
                 split_lib
-                ${IR_CONVERTER_LIB}
+                IR_SQL_Converter_static
         )
         message(STATUS "aqp_middleware: ENABLED (DuckDB only)")
     elseif (HAVE_POSTGRES)
@@ -176,7 +173,7 @@ if (EXISTS ${IR_CONVERTER_ROOT})
         target_link_libraries(aqp_middleware PRIVATE
                 postgres_adapter
                 split_lib
-                ${IR_CONVERTER_LIB}
+                IR_SQL_Converter_static
         )
         message(STATUS "aqp_middleware: ENABLED (PostgreSQL only)")
     else ()
