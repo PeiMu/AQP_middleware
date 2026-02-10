@@ -42,6 +42,11 @@ void DuckDBAdapter::ParseSQL(const std::string &sql) {
   }
 
   plan = std::move(planner->plan);
+
+  // Commit transaction if we started one
+  if (context->transaction.IsAutoCommit()) {
+    context->transaction.Commit();
+  }
 }
 
 void DuckDBAdapter::PreOptimizePlan() {
@@ -167,11 +172,6 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(
     const std::string &sql, const std::string &temp_table_name) {
   auto context = GetClientContext();
 
-  // Begin transaction if in auto-commit mode
-  if (context->transaction.IsAutoCommit()) {
-    context->transaction.BeginTransaction();
-  }
-
   auto duckdb_result = conn->Query(sql);
   if (duckdb_result->HasError()) {
     throw std::runtime_error("Query failed: " + duckdb_result->GetError());
@@ -209,6 +209,11 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(
         duckdb::ColumnDefinition(unique_column_name, types[i]));
     table_column_mappings.emplace(std::make_pair(data_chunk_index, i),
                                   std::move(unique_column_name));
+  }
+
+  // Begin transaction if in auto-commit mode
+  if (context->transaction.IsAutoCommit()) {
+    context->transaction.BeginTransaction();
   }
 
   auto created_table = catalog.CreateTable(*context, std::move(info));
@@ -295,63 +300,26 @@ DuckDBAdapter::GetEstimatedCost(const std::string &sql) {
   // Use EXPLAIN to get estimated cost and rows
   // DuckDB's EXPLAIN output format: we'll parse the cardinality from it
   try {
-    std::string explain_sql = "EXPLAIN " + sql;
-    auto duckdb_result = conn->Query(explain_sql);
 
-    if (duckdb_result->HasError()) {
-      std::cerr << "[DuckDB] EXPLAIN failed: " << duckdb_result->GetError()
-                << std::endl;
-      return {std::numeric_limits<double>::max(),
-              std::numeric_limits<double>::max()};
+    auto context = GetClientContext();
+
+    // Begin transaction if in auto-commit mode
+    if (context->transaction.IsAutoCommit()) {
+      context->transaction.BeginTransaction();
     }
 
-    // DuckDB doesn't expose cost directly like PostgreSQL
-    // We'll estimate based on the plan - use cardinality as proxy
-    // Parse the EXPLAIN output to find estimated cardinality
-
-    double estimated_rows = 0.0;
-    double estimated_cost = 0.0;
-
-    // Collect all output lines
-    std::string explain_output;
-    while (true) {
-      auto chunk = duckdb_result->Fetch();
-      if (!chunk || chunk->size() == 0)
-        break;
-
-      for (size_t row = 0; row < chunk->size(); row++) {
-        explain_output += chunk->GetValue(0, row).ToString() + "\n";
-      }
+    auto cardest_plan = conn->ExtractPlan(sql);
+    if (!cardest_plan) {
+      throw std::runtime_error("couldn't extract plan!");
     }
 
-    // Parse cardinality from EXPLAIN output
-    // DuckDB format shows "~X" for estimated rows
-    // Look for patterns like "~1000" or "EC: 1000"
-    size_t pos = 0;
-    while ((pos = explain_output.find("~", pos)) != std::string::npos) {
-      pos++;
-      size_t end = pos;
-      while (
-          end < explain_output.size() &&
-          (std::isdigit(explain_output[end]) || explain_output[end] == '.')) {
-        end++;
-      }
-      if (end > pos) {
-        double rows = std::stod(explain_output.substr(pos, end - pos));
-        if (rows > estimated_rows) {
-          estimated_rows = rows; // Take the max cardinality as estimate
-        }
-      }
-    }
+    double estimated_rows = (double)cardest_plan->estimated_cardinality;
+    double estimated_cost = estimated_rows;
 
-    // If we couldn't parse cardinality, use a default
-    if (estimated_rows == 0.0) {
-      estimated_rows = 1000.0; // Default fallback
+    // Commit transaction if we started one
+    if (context->transaction.IsAutoCommit()) {
+      context->transaction.Commit();
     }
-
-    // DuckDB doesn't have cost in the same way as PostgreSQL
-    // Use estimated_rows as a proxy for cost
-    estimated_cost = estimated_rows;
 
     return {estimated_cost, estimated_rows};
 
