@@ -4,6 +4,7 @@
 
 #include "split/foreign_key_extractor.h"
 #include "adapters/duckdb_adapter.h"
+#include "adapters/postgres_adapter.h"
 #include "duckdb/planner/constraints/bound_foreign_key_constraint.hpp"
 #include <iostream>
 #include <sstream>
@@ -116,11 +117,13 @@ ForeignKeyGraph ForeignKeyExtractor::ExtractForTables(
 
   std::vector<ForeignKey> fks;
 
-  if (engine_ == BackendEngine::DUCKDB) {
-    fks = ExtractFromDuckDB(table_names);
-  } else if (engine_ == BackendEngine::POSTGRESQL) {
-    fks = ExtractFromPostgreSQL(table_names);
-  }
+  // fixme: now collect foreign ky PG
+
+  //  if (engine_ == BackendEngine::DUCKDB) {
+  //    fks = ExtractFromDuckDB(table_names);
+  //  } else if (engine_ == BackendEngine::POSTGRESQL) {
+  fks = ExtractFromPostgreSQL(table_names);
+  //  }
 
   ForeignKeyGraph graph;
   for (const auto &fk : fks) {
@@ -275,7 +278,10 @@ std::vector<ForeignKey> ForeignKeyExtractor::ExtractFromPostgreSQL(
   }
 
   try {
-    auto result = adapter_->ExecuteSQL(query);
+    // fixme: now collect foreign ky PG
+    auto postgres_adapter = std::make_unique<PostgreSQLAdapter>(
+        "host=localhost port=5432 dbname=imdb user=imdb");
+    auto result = postgres_adapter->ExecuteSQL(query);
 
     for (const auto &row : result.rows) {
       if (row.size() >= 4) {
