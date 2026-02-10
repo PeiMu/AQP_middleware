@@ -250,6 +250,12 @@ void FKBasedSplitter::RebuildJoinGraph() {
       bool t1_is_rel = (t1 < is_relationship_.size()) && is_relationship_[t1];
       bool t2_is_rel = (t2 < is_relationship_.size()) && is_relationship_[t2];
 
+#ifndef NDEBUG
+      std::cout << "  Non-FK join: " << t1 << " <-> " << t2
+                << " (is_rel: " << t1_is_rel << "/" << t2_is_rel << ")"
+                << std::endl;
+#endif
+
       if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
         if (t1_is_rel && !t2_is_rel) {
           join_graph_.SetEdge(t1, t2, true);
@@ -340,7 +346,8 @@ std::vector<bool> FKBasedSplitter::MarkEntityRelationship(
   // where length = rtable->length (max index)
   unsigned int max_idx = 0;
   for (const auto &[idx, name] : tables) {
-    if (idx > max_idx) max_idx = idx;
+    if (idx > max_idx)
+      max_idx = idx;
   }
   std::vector<bool> is_relationship(max_idx + 1, true); // Default: relationship
 
@@ -830,9 +837,43 @@ FKBasedSplitter::BuildSubIRForCluster(
 
   // Step 2: Collect join conditions between cluster tables (internal joins)
   auto join_conditions = ir_utils::CollectJoinConditions(ir, cluster_tables);
+  // Filter out redundant FK-FK joins: keep only conditions whose table pair
+  // exists in current_join_pairs_ (FK-FK pairs already removed by rRj)
+  if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER ||
+      strategy_ == SplitStrategy::ENTITY_CENTER) {
+    size_t before_size = join_conditions.size();
+    auto it = std::remove_if(
+        join_conditions.begin(), join_conditions.end(),
+        [this](const std::unique_ptr<ir_sql_converter::SimplestVarComparison>
+                   &cond) {
+          unsigned int lt = cond->left_attr->GetTableIndex();
+          unsigned int rt = cond->right_attr->GetTableIndex();
+          for (const auto &[p1, p2] : current_join_pairs_) {
+            if ((p1 == lt && p2 == rt) || (p1 == rt && p2 == lt)) {
+              return false; // keep — pair is in current_join_pairs_
+            }
+          }
+          return true; // remove — FK-FK pair not in current_join_pairs_
+        });
+    join_conditions.erase(it, join_conditions.end());
 #ifndef NDEBUG
-  std::cout << "[BuildSubIRForCluster] Found " << join_conditions.size()
-            << " internal join condition(s)" << std::endl;
+    if (join_conditions.size() < before_size) {
+      std::cout << "[BuildSubIRForCluster] Filtered "
+                << (before_size - join_conditions.size())
+                << " redundant FK-FK join condition(s)" << std::endl;
+    }
+#endif
+  }
+
+#ifndef NDEBUG
+  std::cout << "[BuildSubIRForCluster] Join conditions after filtering:"
+            << std::endl;
+  for (const auto &cond : join_conditions) {
+    unsigned int lt = cond->left_attr->GetTableIndex();
+    unsigned int rt = cond->right_attr->GetTableIndex();
+    std::cout << "  " << lt << "." << cond->left_attr->GetColumnName() << " = "
+              << rt << "." << cond->right_attr->GetColumnName() << std::endl;
+  }
 #endif
 
   // Step 3: Collect filter conditions that involve only cluster tables
@@ -1444,11 +1485,11 @@ FKBasedSplitter::UpdateRemainingIR(
   std::cout << std::endl;
 #endif
 
-  // Step 7: Update join graph for temp table
+  // Step 2: Update join graph for temp table
   PrepareForNextIteration(executed_table_indices, temp_table_index,
                           temp_table_name);
 
-  // Step 2: Collect Scan nodes for remaining tables
+  // Step 3: Collect Scan nodes for remaining tables
   auto remaining_scans =
       CollectScansForTables(remaining_ir.get(), remaining_tables);
 #ifndef NDEBUG
@@ -1457,7 +1498,7 @@ FKBasedSplitter::UpdateRemainingIR(
             << std::endl;
 #endif
 
-  // Step 3: Move join conditions from old IR (no cloning needed since we own
+  // Step 4: Move join conditions from old IR (no cloning needed since we own
   // the IR)
   // Note: We include ALL join conditions (including FK-FK joins that were
   // removed from join_graph_ for cluster finding). Redundant FK-FK joins are
@@ -1521,33 +1562,35 @@ FKBasedSplitter::UpdateRemainingIR(
   // Rewrite cross-boundary join conditions: replace executed-table attrs with
   // temp table attrs (PostgreSQL Prepare4Next rewrites all Var nodes to temp)
   for (auto &cond : cross_boundary_joins) {
-    if (!cond) continue;
+    if (!cond)
+      continue;
 
     unsigned int left_table = cond->left_attr->GetTableIndex();
     unsigned int right_table = cond->right_attr->GetTableIndex();
     bool left_executed = executed_table_indices.count(left_table) > 0;
     bool right_executed = executed_table_indices.count(right_table) > 0;
 
-    auto rewriteAttr = [&](std::unique_ptr<ir_sql_converter::SimplestAttr> &attr) {
-      unsigned int old_table = attr->GetTableIndex();
-      unsigned int old_col = attr->GetColumnIndex();
-      // Find this column in the temp table's column_mappings
-      for (size_t i = 0; i < column_mappings.size(); i++) {
-        if (column_mappings[i].first == old_table &&
-            column_mappings[i].second == old_col) {
-          attr = std::make_unique<ir_sql_converter::SimplestAttr>(
-              attr->GetType(), temp_table_index,
-              static_cast<unsigned int>(i), column_names[i]);
+    auto rewriteAttr =
+        [&](std::unique_ptr<ir_sql_converter::SimplestAttr> &attr) {
+          unsigned int old_table = attr->GetTableIndex();
+          unsigned int old_col = attr->GetColumnIndex();
+          // Find this column in the temp table's column_mappings
+          for (size_t i = 0; i < column_mappings.size(); i++) {
+            if (column_mappings[i].first == old_table &&
+                column_mappings[i].second == old_col) {
+              attr = std::make_unique<ir_sql_converter::SimplestAttr>(
+                  attr->GetType(), temp_table_index,
+                  static_cast<unsigned int>(i), column_names[i]);
 #ifndef NDEBUG
-          std::cout << "[FKBasedSplitter::UpdateRemainingIR] Rewrote attr ("
-                    << old_table << ", " << old_col << ") -> ("
-                    << temp_table_index << ", " << i << ") "
-                    << column_names[i] << std::endl;
+              std::cout << "[FKBasedSplitter::UpdateRemainingIR] Rewrote attr ("
+                        << old_table << ", " << old_col << ") -> ("
+                        << temp_table_index << ", " << i << ") "
+                        << column_names[i] << std::endl;
 #endif
-          break;
-        }
-      }
-    };
+              break;
+            }
+          }
+        };
 
     if (left_executed) {
       rewriteAttr(cond->left_attr);
@@ -1557,7 +1600,7 @@ FKBasedSplitter::UpdateRemainingIR(
     }
   }
 
-  // Step 4: Extract filter conditions for remaining tables using AND-splitting
+  // Step 5: Extract filter conditions for remaining tables using AND-splitting
   // For a filter like: #(1,1)... && #(3,1)... && #(4,4)...
   // If tables 1,4 are executed and table 3 is remaining,
   // we extract: #(3,1)... for the remaining IR
@@ -1594,7 +1637,7 @@ FKBasedSplitter::UpdateRemainingIR(
             << std::endl;
 #endif
 
-  // Step 5a. Find Aggregate node in original IR
+  // Step 6a. Find Aggregate node in original IR
   std::function<ir_sql_converter::SimplestAggregate *(
       const std::unique_ptr<ir_sql_converter::SimplestStmt> &)>
       FindAggregateNode;
@@ -1616,7 +1659,7 @@ FKBasedSplitter::UpdateRemainingIR(
   };
   auto *orig_agg = FindAggregateNode(remaining_ir);
 
-  // Step 5b. Find OrderBy node in original IR
+  // Step 6b. Find OrderBy node in original IR
   std::function<ir_sql_converter::SimplestOrderBy *(
       const std::unique_ptr<ir_sql_converter::SimplestStmt> &)>
       FindOrderByNode;
@@ -1637,7 +1680,7 @@ FKBasedSplitter::UpdateRemainingIR(
   };
   auto *orig_order = FindOrderByNode(remaining_ir);
 
-  // Step 5c. Find Limit node in original IR
+  // Step 6c. Find Limit node in original IR
   std::function<ir_sql_converter::SimplestLimit *(
       const std::unique_ptr<ir_sql_converter::SimplestStmt> &)>
       FindLimitNode;
@@ -1658,9 +1701,9 @@ FKBasedSplitter::UpdateRemainingIR(
   };
   auto *orig_limit = FindLimitNode(remaining_ir);
 
-  // Step 6: Build the new remaining IR tree
+  // Step 7: Build the new remaining IR tree
 
-  // 6a: Create SimplestScan for the temp table using pre-computed column names
+  // 7a: Create SimplestScan for the temp table using pre-computed column names
   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
       temp_scan_target_list;
   for (size_t i = 0; i < column_names.size(); i++) {
@@ -1692,7 +1735,7 @@ FKBasedSplitter::UpdateRemainingIR(
       std::move(temp_scan_base), temp_table_index, temp_table_name);
   temp_scan_node->SetEstimatedCardinality(temp_table_cardinality);
 
-  // 6b: Build scan nodes for remaining tables - move target_list from old IR
+  // 7b: Build scan nodes for remaining tables - move target_list from old IR
   std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> scan_nodes;
   scan_nodes.push_back(std::move(temp_scan_node)); // Add temp table first
 
@@ -1710,7 +1753,7 @@ FKBasedSplitter::UpdateRemainingIR(
     scan_nodes.push_back(std::move(new_scan));
   }
 
-  // 6c: Build left-deep join tree
+  // 7c: Build left-deep join tree
   std::unique_ptr<ir_sql_converter::SimplestStmt> result =
       std::move(scan_nodes[0]);
 
@@ -1750,7 +1793,7 @@ FKBasedSplitter::UpdateRemainingIR(
     result = std::move(join_node);
   }
 
-  // 6d: Add filter conditions to qual_vec
+  // 7d: Add filter conditions to qual_vec
   if (!remaining_filters.empty()) {
     // Build Filter node
     std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>>
@@ -1774,7 +1817,7 @@ FKBasedSplitter::UpdateRemainingIR(
         std::move(base_stmt));
   }
 
-  // 6e: Add Projection node on top - move target_list from old IR
+  // 7e: Add Projection node on top - move target_list from old IR
   std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> proj_children;
   proj_children.push_back(std::move(result));
 
@@ -1789,7 +1832,7 @@ FKBasedSplitter::UpdateRemainingIR(
   result = std::make_unique<ir_sql_converter::SimplestProjection>(
       std::move(proj_base), 0);
 
-  // 6f: Add Aggregate node if original IR had aggregation
+  // 7f: Add Aggregate node if original IR had aggregation
   if (orig_agg) {
 #ifndef NDEBUG
     std::cout << "[FKBasedSplitter::UpdateRemainingIR] Found aggregation in "
@@ -1823,7 +1866,7 @@ FKBasedSplitter::UpdateRemainingIR(
         orig_agg->GetGroupIndex());
   }
 
-  // 6g: Add OrderBy node if original IR had ORDER BY
+  // 7g: Add OrderBy node if original IR had ORDER BY
   if (orig_order) {
 #ifndef NDEBUG
     std::cout << "[FKBasedSplitter::UpdateRemainingIR] Found ORDER BY in "
@@ -1843,7 +1886,7 @@ FKBasedSplitter::UpdateRemainingIR(
         std::move(order_base), std::move(orig_order->orders));
   }
 
-  // 6h: Add Limit node if original IR had LIMIT
+  // 7h: Add Limit node if original IR had LIMIT
   if (orig_limit) {
 #ifndef NDEBUG
     std::cout
