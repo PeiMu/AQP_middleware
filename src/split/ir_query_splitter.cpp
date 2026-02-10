@@ -65,8 +65,7 @@ QueryResult IRQuerySplitter::ExecuteWithSplit(const std::string &sql) {
   adapter_->ParseSQL(sql);
 
   // === Phase 2: Pre-Optimize (ONLY for DuckDB) ===
-  if (config_.engine == BackendEngine::DUCKDB &&
-      config_.strategy == SplitStrategy::TOP_DOWN) {
+  if (config_.engine == BackendEngine::DUCKDB) {
     if (config_.enable_debug_print) {
       std::cout << "[IRQuerySplitter] Phase 2: Pre-Optimization (DuckDB)"
                 << std::endl;
@@ -79,8 +78,8 @@ QueryResult IRQuerySplitter::ExecuteWithSplit(const std::string &sql) {
         std::cout
             << "[IRQuerySplitter] Phase 2: After Pre-Optimization (DuckDB)"
             << std::endl;
+        duckdb_adapter->PrintLogicalPlan();
       }
-      duckdb_adapter->PrintLogicalPlan();
     }
 #endif
   } else {
@@ -100,10 +99,10 @@ QueryResult IRQuerySplitter::ExecuteWithSplit(const std::string &sql) {
     throw std::runtime_error("Failed to convert plan to IR");
   }
 
-  if (config_.enable_debug_print) {
-    std::cout << "\n=== Whole IR (before split) ===" << std::endl;
-    whole_ir->Print();
-  }
+//  if (config_.enable_debug_print) {
+//    std::cout << "\n=== Whole IR (before split) ===" << std::endl;
+//    whole_ir->Print();
+//  }
 
   // === Phase 4: Iterative Split-Execute Loop ===
   if (config_.enable_debug_print) {
@@ -179,10 +178,10 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
     throw std::runtime_error("Remaining IR is null after split loop");
   }
 
-  if (config_.enable_debug_print) {
-    std::cout << "\n=== Final Remaining IR ===" << std::endl;
-    remaining_ir->Print();
-  }
+//  if (config_.enable_debug_print) {
+//    std::cout << "\n=== Final Remaining IR ===" << std::endl;
+//    remaining_ir->Print();
+//  }
 
   // Check if remaining IR is trivial (just a temp table reference)
   std::string trivial_temp = GetTrivialTempTable(remaining_ir.get());
@@ -251,10 +250,10 @@ bool IRQuerySplitter::ExecuteOneIteration(
     return false;
   }
 
-  if (config_.enable_debug_print) {
-    std::cout << "\n=== Sub-IR to Execute ===" << std::endl;
-    executable_ir->Print();
-  }
+//  if (config_.enable_debug_print) {
+//    std::cout << "\n=== Sub-IR to Execute ===" << std::endl;
+//    executable_ir->Print();
+//  }
 
   // Generate SQL and execute
   std::string sub_sql =
@@ -335,10 +334,10 @@ bool IRQuerySplitter::ExecuteOneIteration(
   UpdateRemainingIRIndices(remaining_ir.get(), temp_table,
                            extraction->executed_table_indices);
 
-  if (config_.enable_debug_print) {
-    std::cout << "\n=== Updated Remaining IR ===" << std::endl;
-    remaining_ir->Print();
-  }
+//  if (config_.enable_debug_print) {
+//    std::cout << "\n=== Updated Remaining IR ===" << std::endl;
+//    remaining_ir->Print();
+//  }
 
   temp_tables_.push_back(temp_table);
 

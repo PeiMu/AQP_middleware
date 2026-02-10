@@ -35,8 +35,11 @@ public:
   // Get all tables that reference the given table (via FK)
   std::vector<std::string> GetReferencingTables(const std::string &table) const;
 
-  // Get all tables referenced by the given table (via FK)
-  std::vector<std::string> GetReferencedTables(const std::string &table) const;
+  // Update FK graph after creating a temp table (PostgreSQL Prepare4Next)
+  // - Remove FKs where both tables are executed
+  // - Redirect executed table references to temp table
+  void UpdateForTempTable(const std::set<std::string> &executed_table_names,
+                          const std::string &temp_table_name);
 
   // Check if there's a direct FK relationship between two tables
   bool HasDirectFK(const std::string &from_table,

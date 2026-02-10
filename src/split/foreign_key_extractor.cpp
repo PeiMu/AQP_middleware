@@ -3,6 +3,8 @@
  */
 
 #include "split/foreign_key_extractor.h"
+#include "adapters/duckdb_adapter.h"
+#include "duckdb/planner/constraints/bound_foreign_key_constraint.hpp"
 #include <iostream>
 #include <sstream>
 
@@ -27,16 +29,41 @@ ForeignKeyGraph::GetReferencingTables(const std::string &table) const {
   return result;
 }
 
-std::vector<std::string>
-ForeignKeyGraph::GetReferencedTables(const std::string &table) const {
-  std::vector<std::string> result;
-  auto it = fk_from_table_.find(table);
-  if (it != fk_from_table_.end()) {
-    for (const auto &fk : it->second) {
-      result.push_back(fk.pk_table);
+void ForeignKeyGraph::UpdateForTempTable(
+    const std::set<std::string> &executed_table_names,
+    const std::string &temp_table_name) {
+  // Collect updated FKs (need to rebuild maps since keys change)
+  std::vector<ForeignKey> updated_fks;
+
+  for (const auto &[table, fks] : fk_from_table_) {
+    for (const auto &fk : fks) {
+      bool fk_executed = executed_table_names.count(fk.fk_table) > 0;
+      bool pk_executed = executed_table_names.count(fk.pk_table) > 0;
+
+      if (fk_executed && pk_executed) {
+        // Both executed: remove (PostgreSQL Prepare4Next line 1553-1555)
+        continue;
+      }
+
+      ForeignKey updated_fk = fk;
+      if (fk_executed) {
+        // Redirect con_relid to temp (PostgreSQL line 1559)
+        updated_fk.fk_table = temp_table_name;
+      }
+      if (pk_executed) {
+        // Redirect ref_relid to temp (PostgreSQL line 1564)
+        updated_fk.pk_table = temp_table_name;
+      }
+      updated_fks.push_back(std::move(updated_fk));
     }
   }
-  return result;
+
+  // Rebuild maps
+  fk_from_table_.clear();
+  fk_to_table_.clear();
+  for (const auto &fk : updated_fks) {
+    AddForeignKey(fk);
+  }
 }
 
 bool ForeignKeyGraph::HasDirectFK(const std::string &from_table,
@@ -123,63 +150,89 @@ std::vector<ForeignKey> ForeignKeyExtractor::ExtractFromDuckDB(
 
   std::vector<ForeignKey> fks;
 
-  // DuckDB stores FK constraints in duckdb_constraints() table function
-  std::string query = R"(
-   SELECT
-     table_name as fk_table,
-     constraint_column_names[1] as fk_column,
-     constraint_text as constraint_def
-   FROM duckdb_constraints()
-   WHERE constraint_type = 'FOREIGN KEY'
- )";
+  // Use DuckDB's C++ catalog API for direct FK constraint access
+  auto *duckdb_adapter = dynamic_cast<DuckDBAdapter *>(adapter_);
+  if (!duckdb_adapter) {
+    std::cerr << "[ForeignKeyExtractor] Failed to cast adapter to DuckDBAdapter"
+              << std::endl;
+    return fks;
+  }
 
-  // Add table filter if specific tables requested
-  if (!table_names.empty()) {
-    std::ostringstream table_list;
-    bool first = true;
-    for (const auto &table : table_names) {
-      if (!first)
-        table_list << ", ";
-      table_list << "'" << table << "'";
-      first = false;
-    }
-    query += " AND table_name IN (" + table_list.str() + ")";
+  auto *context = duckdb_adapter->GetClientContext();
+  if (!context) {
+    std::cerr << "[ForeignKeyExtractor] No client context available"
+              << std::endl;
+    return fks;
   }
 
   try {
-    auto result = adapter_->ExecuteSQL(query);
+    // Begin transaction if in auto-commit mode (required for catalog access)
+    if (context->transaction.IsAutoCommit()) {
+      context->transaction.BeginTransaction();
+    }
 
-    for (const auto &row : result.rows) {
-      if (row.size() >= 3) {
-        std::string fk_table = row[0];
-        std::string fk_column = row[1];
-        std::string constraint_text = row[2];
+    // Get the default catalog and schema
+    auto &default_entry =
+        context->client_data->catalog_search_path->GetDefault();
+    auto &catalog =
+        duckdb::Catalog::GetCatalog(*context, default_entry.catalog);
 
-        // Parse constraint text to extract referenced table and column
-        // Format: "FOREIGN KEY (column) REFERENCES table(column)"
-        // This is simplified - real implementation needs robust parsing
+    for (const auto &table_name : table_names) {
+      // Get the table catalog entry
+      auto table_entry = catalog.GetEntry<duckdb::TableCatalogEntry>(
+          *context, default_entry.schema, table_name,
+          duckdb::OnEntryNotFound::RETURN_NULL);
 
-        size_t ref_pos = constraint_text.find("REFERENCES");
-        if (ref_pos != std::string::npos) {
-          std::string ref_part = constraint_text.substr(ref_pos + 10);
-          size_t paren_pos = ref_part.find('(');
-          if (paren_pos != std::string::npos) {
-            std::string pk_table = ref_part.substr(0, paren_pos);
-            // Trim whitespace
-            pk_table.erase(0, pk_table.find_first_not_of(" \t"));
-            pk_table.erase(pk_table.find_last_not_of(" \t") + 1);
+      if (!table_entry) {
+        continue;
+      }
 
-            size_t close_paren = ref_part.find(')', paren_pos);
-            std::string pk_column =
-                ref_part.substr(paren_pos + 1, close_paren - paren_pos - 1);
+      // Get bound constraints from the table entry
+      auto &constraints = table_entry->GetBoundConstraints();
+      auto &columns = table_entry->GetColumns();
 
-            fks.emplace_back(fk_table, fk_column, pk_table, pk_column);
-          }
+      for (const auto &constraint : constraints) {
+        if (constraint->type != duckdb::ConstraintType::FOREIGN_KEY) {
+          continue;
+        }
+
+        auto &fk_constraint =
+            constraint->Cast<duckdb::BoundForeignKeyConstraint>();
+        auto &info = fk_constraint.info;
+
+        // Only process FK_TYPE_FOREIGN_KEY_TABLE entries:
+        // this table is the referencing (FK) table, info.table is the
+        // referenced (PK) table
+        if (info.type != duckdb::ForeignKeyType::FK_TYPE_FOREIGN_KEY_TABLE) {
+          continue;
+        }
+
+        // Get the referenced (PK) table entry for column name resolution
+        auto pk_table_entry = catalog.GetEntry<duckdb::TableCatalogEntry>(
+            *context, default_entry.schema, info.table,
+            duckdb::OnEntryNotFound::RETURN_NULL);
+        if (!pk_table_entry) {
+          continue;
+        }
+        auto &pk_columns = pk_table_entry->GetColumns();
+
+        // Extract each FK column pair
+        for (size_t i = 0; i < info.fk_keys.size(); i++) {
+          auto &fk_col = columns.GetColumn(info.fk_keys[i]);
+          auto &pk_col = pk_columns.GetColumn(info.pk_keys[i]);
+
+          fks.emplace_back(table_name, fk_col.GetName(), info.table,
+                           pk_col.GetName());
         }
       }
     }
+
+    // Commit transaction if we started one
+    if (context->transaction.IsAutoCommit()) {
+      context->transaction.Commit();
+    }
   } catch (const std::exception &e) {
-    std::cerr << "[ForeignKeyExtractor] Error extracting FKs from DuckDB: "
+    std::cerr << "[ForeignKeyExtractor] Error extracting FKs from DuckDB API: "
               << e.what() << std::endl;
   }
 

@@ -91,10 +91,6 @@ void FKBasedSplitter::Preprocess(
   // Step 5: Build join graph (implements PostgreSQL's List2Graph)
   BuildJoinGraph(ir.get());
 
-#ifndef NDEBUG
-  join_graph_.Print();
-#endif
-
   // Reset state
   split_iteration_ = 0;
   executed_tables_.clear();
@@ -163,31 +159,43 @@ void FKBasedSplitter::BuildJoinGraph(const ir_sql_converter::SimplestStmt *ir) {
             << std::endl;
 #endif
 
-  // Resize graph to accommodate all tables
-  int num_tables = table_index_to_name_.size();
-  join_graph_.Resize(num_tables);
-
   // Collect all join conditions from IR
-  join_pairs_ = CollectJoinConditions(ir);
+  current_join_pairs_ = CollectJoinConditions(ir);
 
 #ifndef NDEBUG
-  std::cout << "[" << GetStrategyName() << "] Found " << join_pairs_.size()
-            << " join condition(s) from IR" << std::endl;
+  std::cout << "[" << GetStrategyName() << "] Found "
+            << current_join_pairs_.size() << " join condition(s) from IR"
+            << std::endl;
 #endif
 
   // For RelationshipCenter and EntityCenter, remove redundant FK-FK joins
-  // This implements PostgreSQL's rRj (removeRedundantJoin) function
-  // which is called before List2Graph when algorithm != Minsubquery
+  // (PostgreSQL rRj - only done once at initialization)
   if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER ||
       strategy_ == SplitStrategy::ENTITY_CENTER) {
-    join_pairs_ = RemoveRedundantJoins(join_pairs_);
+    current_join_pairs_ = RemoveRedundantJoins(current_join_pairs_);
   }
 
-  // Separate FK joins from non-FK joins (PostgreSQL List2Graph pattern)
+  // Build the graph from current state
+  RebuildJoinGraph();
+}
+
+void FKBasedSplitter::RebuildJoinGraph() {
+  // Determine graph size from current tables
+  unsigned int max_idx = 0;
+  for (const auto &[idx, name] : table_index_to_name_) {
+    if (idx > max_idx)
+      max_idx = idx;
+  }
+  int graph_size = static_cast<int>(max_idx) + 1;
+
+  // Reset graph (PostgreSQL: memset(graph, false, ...))
+  join_graph_ = JoinGraph(graph_size);
+
+  // Separate FK and non-FK joins
   std::vector<std::pair<unsigned int, unsigned int>> fk_joins;
   std::vector<std::pair<unsigned int, unsigned int>> non_fk_joins;
 
-  for (const auto &[t1, t2] : join_pairs_) {
+  for (const auto &[t1, t2] : current_join_pairs_) {
     if (IsFKJoin(t1, t2)) {
       fk_joins.push_back({t1, t2});
     } else {
@@ -196,134 +204,77 @@ void FKBasedSplitter::BuildJoinGraph(const ir_sql_converter::SimplestStmt *ir) {
   }
 
 #ifndef NDEBUG
-  std::cout << "[" << GetStrategyName() << "] FK joins: " << fk_joins.size()
+  std::cout << "[" << GetStrategyName()
+            << "] RebuildJoinGraph: FK joins: " << fk_joins.size()
             << ", Non-FK joins: " << non_fk_joins.size() << std::endl;
 #endif
 
-  // === Process based on algorithm type ===
-  // This implements PostgreSQL's List2Graph() from query_split.c:1811-1911
-
   if (strategy_ == SplitStrategy::MIN_SUBQUERY) {
-    // MinSubquery: symmetric graph with i < j (upper triangular)
-    // PostgreSQL lines 1856-1866
-    for (const auto &[t1, t2] : join_pairs_) {
+    // MinSubquery: symmetric (upper triangular) — all pairs
+    for (const auto &[t1, t2] : current_join_pairs_) {
       unsigned int i = std::min(t1, t2);
       unsigned int j = std::max(t1, t2);
       join_graph_.SetEdge(i, j, true);
-#ifndef NDEBUG
-      std::cout << "  MinSubquery edge: " << i << " -> " << j << std::endl;
-#endif
     }
-  } else if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER ||
-             strategy_ == SplitStrategy::ENTITY_CENTER) {
-
-    // Step 1: Process FK joins FIRST with directed edges
-    // PostgreSQL lines 1818-1851
+  } else {
+    // Step 1: FK joins with directed edges (PostgreSQL List2Graph lines
+    // 1827-1858)
     for (const auto &[t1, t2] : fk_joins) {
       auto it1 = table_index_to_name_.find(t1);
       auto it2 = table_index_to_name_.find(t2);
-
       if (it1 == table_index_to_name_.end() ||
-          it2 == table_index_to_name_.end()) {
+          it2 == table_index_to_name_.end())
         continue;
-      }
 
-      // Determine which table is the FK owner (con_relid) and which is
-      // referenced (ref_relid)
       unsigned int fk_owner_idx, pk_ref_idx;
       if (fk_graph_.HasDirectFK(it1->second, it2->second)) {
-        // t1 has FK to t2: t1 is fk_owner (relationship), t2 is pk_ref (entity)
         fk_owner_idx = t1;
         pk_ref_idx = t2;
       } else {
-        // t2 has FK to t1: t2 is fk_owner (relationship), t1 is pk_ref (entity)
         fk_owner_idx = t2;
         pk_ref_idx = t1;
       }
 
       if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
-        // RelationshipCenter: graph[fk_owner][pk_ref] = true
-        // (relationship -> entity)
-        // PostgreSQL line 1844
+        // graph[con_relid][ref_relid] (PostgreSQL line 1853)
         join_graph_.SetEdge(fk_owner_idx, pk_ref_idx, true);
-#ifndef NDEBUG
-        std::cout << "  RelationshipCenter FK edge: " << fk_owner_idx << " -> "
-                  << pk_ref_idx << " (" << table_index_to_name_.at(fk_owner_idx)
-                  << " -> " << table_index_to_name_.at(pk_ref_idx) << ")"
-                  << std::endl;
-#endif
-      } else { // EntityCenter
-        // EntityCenter: graph[pk_ref][fk_owner] = true (entity -> relationship)
-        // PostgreSQL line 1848
+      } else {
+        // graph[ref_relid][con_relid] (PostgreSQL line 1857)
         join_graph_.SetEdge(pk_ref_idx, fk_owner_idx, true);
-#ifndef NDEBUG
-        std::cout << "  EntityCenter FK edge: " << pk_ref_idx << " -> "
-                  << fk_owner_idx << " (" << table_index_to_name_.at(pk_ref_idx)
-                  << " -> " << table_index_to_name_.at(fk_owner_idx) << ")"
-                  << std::endl;
-#endif
       }
     }
 
-    // Step 2: Process non-FK joins with direction based on entity/relationship
-    // PostgreSQL lines 1852-1908
+    // Step 2: Non-FK joins with direction based on is_relationship
+    // (PostgreSQL List2Graph lines 1861-1917)
     for (const auto &[t1, t2] : non_fk_joins) {
-      bool t1_is_relationship = is_relationship_[t1];
-      bool t2_is_relationship = is_relationship_[t2];
+      bool t1_is_rel = (t1 < is_relationship_.size()) && is_relationship_[t1];
+      bool t2_is_rel = (t2 < is_relationship_.size()) && is_relationship_[t2];
 
       if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
-        // PostgreSQL lines 1867-1886
-        if (t1_is_relationship && !t2_is_relationship) {
-          // t1 is relationship, t2 is entity: graph[t1][t2] = true
+        if (t1_is_rel && !t2_is_rel) {
           join_graph_.SetEdge(t1, t2, true);
-#ifndef NDEBUG
-          std::cout << "  RelationshipCenter non-FK: " << t1 << " -> " << t2
-                    << std::endl;
-#endif
-        } else if (!t1_is_relationship && t2_is_relationship) {
-          // t1 is entity, t2 is relationship: graph[t2][t1] = true
+        } else if (!t1_is_rel && t2_is_rel) {
           join_graph_.SetEdge(t2, t1, true);
-#ifndef NDEBUG
-          std::cout << "  RelationshipCenter non-FK: " << t2 << " -> " << t1
-                    << std::endl;
-#endif
         } else {
-          // Both entities or both relationships: bidirectional
           join_graph_.SetEdge(t1, t2, true);
           join_graph_.SetEdge(t2, t1, true);
-#ifndef NDEBUG
-          std::cout << "  RelationshipCenter non-FK bidirectional: " << t1
-                    << " <-> " << t2 << std::endl;
-#endif
         }
       } else { // EntityCenter
-        // PostgreSQL lines 1888-1907
-        if (!t1_is_relationship && t2_is_relationship) {
-          // t1 is entity, t2 is relationship: graph[t1][t2] = true
+        if (!t1_is_rel && t2_is_rel) {
           join_graph_.SetEdge(t1, t2, true);
-#ifndef NDEBUG
-          std::cout << "  EntityCenter non-FK: " << t1 << " -> " << t2
-                    << std::endl;
-#endif
-        } else if (t1_is_relationship && !t2_is_relationship) {
-          // t1 is relationship, t2 is entity: graph[t2][t1] = true
+        } else if (t1_is_rel && !t2_is_rel) {
           join_graph_.SetEdge(t2, t1, true);
-#ifndef NDEBUG
-          std::cout << "  EntityCenter non-FK: " << t2 << " -> " << t1
-                    << std::endl;
-#endif
         } else {
-          // Both entities or both relationships: bidirectional
           join_graph_.SetEdge(t1, t2, true);
           join_graph_.SetEdge(t2, t1, true);
-#ifndef NDEBUG
-          std::cout << "  EntityCenter non-FK bidirectional: " << t1 << " <-> "
-                    << t2 << std::endl;
-#endif
         }
       }
     }
   }
+
+#ifndef NDEBUG
+  join_graph_.Print();
+#endif
 }
 
 std::map<unsigned int, std::string>
@@ -384,10 +335,17 @@ std::vector<bool> FKBasedSplitter::MarkEntityRelationship(
     const ForeignKeyGraph &fk_graph,
     const std::map<unsigned int, std::string> &tables) {
 
-  int num_tables = tables.size();
-  std::vector<bool> is_relationship(num_tables, true); // Default: relationship
+  // Size vector to accommodate max table index (not count of tables)
+  // PostgreSQL rRj (line 263): palloc(length * sizeof(bool))
+  // where length = rtable->length (max index)
+  unsigned int max_idx = 0;
+  for (const auto &[idx, name] : tables) {
+    if (idx > max_idx) max_idx = idx;
+  }
+  std::vector<bool> is_relationship(max_idx + 1, true); // Default: relationship
 
-  // Referenced tables are entities (PostgreSQL pattern from rRj)
+  // Referenced tables are entities (PostgreSQL rRj line 270-271):
+  //   is_relationship[ref_relid] = false
   for (const auto &[idx, table_name] : tables) {
     auto referencing = fk_graph.GetReferencingTables(table_name);
     if (!referencing.empty()) {
@@ -459,27 +417,14 @@ bool FKBasedSplitter::IsComplete(
 #endif
   } else {
     // EntityCenter/RelationshipCenter: complete when only 1 center remains
-    // For RelationshipCenter: center = relationship table with outgoing edges
-    // For EntityCenter: center = entity table with outgoing edges
+    // A center = any table with outgoing edges in the directed graph
+    // (PostgreSQL does NOT filter centers by is_relationship)
     int remaining_centers = 0;
     for (int i = 0; i < join_graph_.Size(); i++) {
       if (executed_tables_.count(i)) {
-        continue; // Skip executed tables
+        continue;
       }
-
-      // Check if this table qualifies as a center based on strategy
-      bool is_center_type = false;
-      if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
-        // RelationshipCenter: centers are relationship tables
-        is_center_type = (static_cast<size_t>(i) < is_relationship_.size()) &&
-                         is_relationship_[i];
-      } else {
-        // EntityCenter: centers are entity tables
-        is_center_type = (static_cast<size_t>(i) < is_relationship_.size()) &&
-                         !is_relationship_[i];
-      }
-
-      if (!is_center_type) {
+      if (table_index_to_name_.find(i) == table_index_to_name_.end()) {
         continue;
       }
 
@@ -748,12 +693,11 @@ FKBasedSplitter::CollectExternalJoinAttrs(
         unsigned int left_table = cond->left_attr->GetTableIndex();
         unsigned int right_table = cond->right_attr->GetTableIndex();
 
-        // Skip joins that no longer exist in join_graph_ (removed as redundant)
-        // Check both directions since graph may be asymmetric
-        if (!join_graph_.HasEdge(left_table, right_table) &&
-            !join_graph_.HasEdge(right_table, left_table)) {
-          continue;
-        }
+        // NOTE: Do NOT filter by join_graph_ here. Redundant FK-FK joins
+        // were removed from join_graph_ for graph partitioning only.
+        // The join conditions still exist in the IR and must be satisfied.
+        // All external join attrs must be in the cluster output so that
+        // cross-boundary conditions can be rewritten to the temp table.
 
         // If one table is in cluster and the other is NOT, we need to include
         // the cluster table's attr in our output (for the remaining plan's
@@ -796,6 +740,65 @@ FKBasedSplitter::CollectExternalJoinAttrs(
   }
 
   return attrs;
+}
+
+void FKBasedSplitter::PrepareForNextIteration(
+    const std::set<unsigned int> &executed_table_indices,
+    unsigned int temp_table_index, const std::string &temp_table_name) {
+
+#ifndef NDEBUG
+  std::cout << "[" << GetStrategyName()
+            << "] PrepareForNextIteration: temp=" << temp_table_name
+            << " (index " << temp_table_index << ")" << std::endl;
+#endif
+
+  // Step 1: Update is_relationship_ for temp table
+  // (PostgreSQL Prepare4Next lines 1530-1533)
+  if (temp_table_index >= is_relationship_.size()) {
+    is_relationship_.resize(temp_table_index + 1, false);
+  }
+  if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
+    is_relationship_[temp_table_index] = false; // temp = entity
+  } else if (strategy_ == SplitStrategy::ENTITY_CENTER) {
+    is_relationship_[temp_table_index] = true; // temp = relationship
+  }
+
+  // Step 2: Update fk_graph_ (PostgreSQL Prepare4Next lines 1547-1569)
+  std::set<std::string> executed_table_names;
+  for (unsigned int idx : executed_table_indices) {
+    auto it = table_index_to_name_.find(idx);
+    if (it != table_index_to_name_.end()) {
+      executed_table_names.insert(it->second);
+    }
+  }
+  fk_graph_.UpdateForTempTable(executed_table_names, temp_table_name);
+
+  // Step 3: Update current_join_pairs_ (redirect to temp, remove both-executed)
+  // (PostgreSQL: re-collects Joinlist from updated query, lines 1162-1168)
+  std::vector<std::pair<unsigned int, unsigned int>> updated_pairs;
+  for (const auto &[t1, t2] : current_join_pairs_) {
+    bool t1_executed = executed_table_indices.count(t1) > 0;
+    bool t2_executed = executed_table_indices.count(t2) > 0;
+
+    if (t1_executed && t2_executed) {
+      continue; // Both executed: remove
+    }
+
+    unsigned int new_t1 = t1_executed ? temp_table_index : t1;
+    unsigned int new_t2 = t2_executed ? temp_table_index : t2;
+    updated_pairs.push_back({new_t1, new_t2});
+  }
+  current_join_pairs_ = std::move(updated_pairs);
+
+  // Step 4: Remove executed tables and add temp table to table_index_to_name_
+  // (PostgreSQL Prepare4Next compacts rtable, removing executed entries)
+  for (unsigned int idx : executed_table_indices) {
+    table_index_to_name_.erase(idx);
+  }
+  table_index_to_name_[temp_table_index] = temp_table_name;
+
+  // Step 5: Rebuild join graph from scratch (PostgreSQL List2Graph, line 1171)
+  RebuildJoinGraph();
 }
 
 std::unique_ptr<ir_sql_converter::SimplestStmt>
@@ -1026,48 +1029,6 @@ std::unique_ptr<SubqueryExtraction> MinSubquerySplitter::ExtractNextSubquery(
             << table_index_to_name_[table2] << ")" << std::endl;
 #endif
 
-  // Remove this edge from graph
-  // PostgreSQL lines 1345: graph[X][Y] = false
-  join_graph_.SetEdge(table1, table2, false);
-
-  // PostgreSQL lines 1346-1368: Handle transitive closure
-  // If a third table i is connected to both X and Y, remove edge to X
-  int length = join_graph_.Size();
-  for (int i = 0; i < length; i++) {
-    if (i == table1 || i == table2)
-      continue;
-
-    bool connected_to_t1 = false;
-    bool connected_to_t2 = false;
-
-    // Check connection to table1 (X)
-    if (i < table1) {
-      connected_to_t1 = join_graph_.HasEdge(i, table1);
-    } else {
-      connected_to_t1 = join_graph_.HasEdge(table1, i);
-    }
-
-    // Check connection to table2 (Y)
-    if (i < table2) {
-      connected_to_t2 = join_graph_.HasEdge(i, table2);
-    } else {
-      connected_to_t2 = join_graph_.HasEdge(table2, i);
-    }
-
-    // If connected to both, remove edge to table1 (X)
-    if (connected_to_t1 && connected_to_t2) {
-      if (i < table1) {
-        join_graph_.SetEdge(i, table1, false);
-      } else {
-        join_graph_.SetEdge(table1, i, false);
-      }
-#ifndef NDEBUG
-      std::cout << "[MinSubquery] Removed transitive edge between " << i
-                << " and " << table1 << std::endl;
-#endif
-    }
-  }
-
   // Create extraction with these two tables
   std::set<unsigned int> table_indices = {static_cast<unsigned int>(table1),
                                           static_cast<unsigned int>(table2)};
@@ -1194,16 +1155,6 @@ RelationshipCenterSplitter::ExtractNextSubquery(
   std::cout << std::endl;
 #endif
 
-  // Remove edges for this relationship
-  // AQP-PostgreSQL lines 1330-1337: clear all edges from center X
-  int relationship_idx = cluster[0];
-  for (int j = 0; j < join_graph_.Size(); j++) {
-    if (join_graph_.HasEdge(relationship_idx, j)) {
-      join_graph_.SetEdge(relationship_idx, j, false);
-      join_graph_.SetEdge(j, relationship_idx, false);
-    }
-  }
-
   // Create extraction
   std::set<unsigned int> table_indices;
   for (int idx : cluster) {
@@ -1259,25 +1210,23 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
             << std::endl;
 #endif
 
-  // First pass: check relationship tables as centers
+  // Try every table as a potential center (PostgreSQL lines 1230-1263)
+  // PostgreSQL does NOT filter by is_relationship - any table with outgoing
+  // edges in the directed graph is a candidate center.
   for (int i = 0; i < join_graph_.Size(); i++) {
-    // Skip tables that have already been executed
     if (executed_tables_.count(i)) {
       continue;
     }
-
-    // For RelationshipCenter, prefer relationship tables as centers
-    if (!is_relationship_[i]) {
+    if (table_index_to_name_.find(i) == table_index_to_name_.end()) {
       continue;
     }
 
     std::vector<int> cluster;
-    cluster.push_back(i); // Add center itself
+    cluster.push_back(i);
 
-    // Collect all connected tables (entities pointed to by this relationship)
+    // Collect tables with outgoing edges (PostgreSQL getRT_2)
     for (int j = 0; j < join_graph_.Size(); j++) {
-      // Skip tables that have already been executed
-      if (executed_tables_.count(j)) {
+      if (i == j || executed_tables_.count(j)) {
         continue;
       }
       if (join_graph_.HasEdge(i, j)) {
@@ -1289,7 +1238,6 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
       continue;
     }
 
-    // Get estimated cost for this cluster
     auto [cost, rows] = GetClusterCost(cluster, ir);
 
 #ifndef NDEBUG
@@ -1303,50 +1251,9 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
     std::cout << "] cost=" << cost << ", rows=" << rows << std::endl;
 #endif
 
-    // PostgreSQL's tarfunc comparison (simplified: use cost)
     if (cost < best_cost) {
       best_cost = cost;
       best_cluster = cluster;
-    }
-  }
-
-  // If no relationship center found, try any table with connections
-  if (best_cluster.empty()) {
-    for (int i = 0; i < join_graph_.Size(); i++) {
-      // Skip tables that have already been executed
-      if (executed_tables_.count(i)) {
-        continue;
-      }
-
-      std::vector<int> cluster;
-      cluster.push_back(i);
-
-      for (int j = 0; j < join_graph_.Size(); j++) {
-        // Skip tables that have already been executed
-        if (executed_tables_.count(j)) {
-          continue;
-        }
-        if (join_graph_.HasEdge(i, j)) {
-          cluster.push_back(j);
-        }
-      }
-
-      if (cluster.size() < 2) {
-        continue;
-      }
-
-      auto [cost, rows] = GetClusterCost(cluster, ir);
-
-#ifndef NDEBUG
-      std::cout << "  Fallback cluster center=" << i << " ("
-                << table_index_to_name_[i] << "): cost=" << cost
-                << ", rows=" << rows << std::endl;
-#endif
-
-      if (cost < best_cost) {
-        best_cost = cost;
-        best_cluster = cluster;
-      }
     }
   }
 
@@ -1386,16 +1293,6 @@ std::unique_ptr<SubqueryExtraction> EntityCenterSplitter::ExtractNextSubquery(
   }
   std::cout << std::endl;
 #endif
-
-  // Remove edges for this entity
-  // PostgreSQL lines 1330-1337: clear all edges from center X
-  int entity_idx = cluster[0];
-  for (int j = 0; j < join_graph_.Size(); j++) {
-    if (join_graph_.HasEdge(entity_idx, j)) {
-      join_graph_.SetEdge(entity_idx, j, false);
-      join_graph_.SetEdge(j, entity_idx, false);
-    }
-  }
 
   // Create extraction
   std::set<unsigned int> table_indices;
@@ -1451,25 +1348,23 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir) {
   std::cout << "[EntityCenter] Evaluating candidate clusters:" << std::endl;
 #endif
 
-  // First pass: check entity tables as centers
+  // Try every table as a potential center (PostgreSQL lines 1230-1263)
+  // PostgreSQL does NOT filter by is_relationship - any table with outgoing
+  // edges in the directed graph is a candidate center.
   for (int i = 0; i < join_graph_.Size(); i++) {
-    // Skip tables that have already been executed
     if (executed_tables_.count(i)) {
       continue;
     }
-
-    // For EntityCenter, prefer entity tables as centers
-    if (is_relationship_[i]) {
+    if (table_index_to_name_.find(i) == table_index_to_name_.end()) {
       continue;
     }
 
     std::vector<int> cluster;
-    cluster.push_back(i); // Add center itself
+    cluster.push_back(i);
 
-    // Collect all connected tables (relationships pointed to by this entity)
+    // Collect tables with outgoing edges (PostgreSQL getRT_2)
     for (int j = 0; j < join_graph_.Size(); j++) {
-      // Skip tables that have already been executed
-      if (executed_tables_.count(j)) {
+      if (i == j || executed_tables_.count(j)) {
         continue;
       }
       if (join_graph_.HasEdge(i, j)) {
@@ -1481,7 +1376,6 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir) {
       continue;
     }
 
-    // Get estimated cost for this cluster
     auto [cost, rows] = GetClusterCost(cluster, ir);
 
 #ifndef NDEBUG
@@ -1495,50 +1389,9 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir) {
     std::cout << "] cost=" << cost << ", rows=" << rows << std::endl;
 #endif
 
-    // PostgreSQL's tarfunc comparison (simplified: use cost)
     if (cost < best_cost) {
       best_cost = cost;
       best_cluster = cluster;
-    }
-  }
-
-  // If no entity center found, try any table with connections
-  if (best_cluster.empty()) {
-    for (int i = 0; i < join_graph_.Size(); i++) {
-      // Skip tables that have already been executed
-      if (executed_tables_.count(i)) {
-        continue;
-      }
-
-      std::vector<int> cluster;
-      cluster.push_back(i);
-
-      for (int j = 0; j < join_graph_.Size(); j++) {
-        // Skip tables that have already been executed
-        if (executed_tables_.count(j)) {
-          continue;
-        }
-        if (join_graph_.HasEdge(i, j)) {
-          cluster.push_back(j);
-        }
-      }
-
-      if (cluster.size() < 2) {
-        continue;
-      }
-
-      auto [cost, rows] = GetClusterCost(cluster, ir);
-
-#ifndef NDEBUG
-      std::cout << "  Fallback cluster center=" << i << " ("
-                << table_index_to_name_[i] << "): cost=" << cost
-                << ", rows=" << rows << std::endl;
-#endif
-
-      if (cost < best_cost) {
-        best_cost = cost;
-        best_cluster = cluster;
-      }
     }
   }
 
@@ -1591,6 +1444,10 @@ FKBasedSplitter::UpdateRemainingIR(
   std::cout << std::endl;
 #endif
 
+  // Step 7: Update join graph for temp table
+  PrepareForNextIteration(executed_table_indices, temp_table_index,
+                          temp_table_name);
+
   // Step 2: Collect Scan nodes for remaining tables
   auto remaining_scans =
       CollectScansForTables(remaining_ir.get(), remaining_tables);
@@ -1601,18 +1458,10 @@ FKBasedSplitter::UpdateRemainingIR(
 #endif
 
   // Step 3: Move join conditions from old IR (no cloning needed since we own
-  // the IR) Helper to check if a table pair exists in join_pairs_
-  auto pairExistsInJoinPairs = [this](unsigned int t1,
-                                      unsigned int t2) -> bool {
-    for (const auto &[p1, p2] : join_pairs_) {
-      if ((p1 == t1 && p2 == t2) || (p1 == t2 && p2 == t1)) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // Move join conditions from IR (we own the IR so we can move)
+  // the IR)
+  // Note: We include ALL join conditions (including FK-FK joins that were
+  // removed from join_graph_ for cluster finding). Redundant FK-FK joins are
+  // only removed for graph partitioning, not for SQL correctness.
   std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
       internal_joins;
   std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
@@ -1634,16 +1483,6 @@ FKBasedSplitter::UpdateRemainingIR(
 
           unsigned int left_table = cond->left_attr->GetTableIndex();
           unsigned int right_table = cond->right_attr->GetTableIndex();
-
-          // Skip if this join pair was removed as redundant
-          if (!pairExistsInJoinPairs(left_table, right_table)) {
-#ifndef NDEBUG
-            std::cout << "[FKBasedSplitter::UpdateRemainingIR] Skipping "
-                         "redundant join: "
-                      << left_table << " <-> " << right_table << std::endl;
-#endif
-            continue;
-          }
 
           bool left_in_remaining = remaining_tables.count(left_table) > 0;
           bool right_in_remaining = remaining_tables.count(right_table) > 0;
@@ -1678,6 +1517,45 @@ FKBasedSplitter::UpdateRemainingIR(
             << cross_boundary_joins.size()
             << " cross-boundary join condition(s)" << std::endl;
 #endif
+
+  // Rewrite cross-boundary join conditions: replace executed-table attrs with
+  // temp table attrs (PostgreSQL Prepare4Next rewrites all Var nodes to temp)
+  for (auto &cond : cross_boundary_joins) {
+    if (!cond) continue;
+
+    unsigned int left_table = cond->left_attr->GetTableIndex();
+    unsigned int right_table = cond->right_attr->GetTableIndex();
+    bool left_executed = executed_table_indices.count(left_table) > 0;
+    bool right_executed = executed_table_indices.count(right_table) > 0;
+
+    auto rewriteAttr = [&](std::unique_ptr<ir_sql_converter::SimplestAttr> &attr) {
+      unsigned int old_table = attr->GetTableIndex();
+      unsigned int old_col = attr->GetColumnIndex();
+      // Find this column in the temp table's column_mappings
+      for (size_t i = 0; i < column_mappings.size(); i++) {
+        if (column_mappings[i].first == old_table &&
+            column_mappings[i].second == old_col) {
+          attr = std::make_unique<ir_sql_converter::SimplestAttr>(
+              attr->GetType(), temp_table_index,
+              static_cast<unsigned int>(i), column_names[i]);
+#ifndef NDEBUG
+          std::cout << "[FKBasedSplitter::UpdateRemainingIR] Rewrote attr ("
+                    << old_table << ", " << old_col << ") -> ("
+                    << temp_table_index << ", " << i << ") "
+                    << column_names[i] << std::endl;
+#endif
+          break;
+        }
+      }
+    };
+
+    if (left_executed) {
+      rewriteAttr(cond->left_attr);
+    }
+    if (right_executed) {
+      rewriteAttr(cond->right_attr);
+    }
+  }
 
   // Step 4: Extract filter conditions for remaining tables using AND-splitting
   // For a filter like: #(1,1)... && #(3,1)... && #(4,4)...
@@ -1985,10 +1863,6 @@ FKBasedSplitter::UpdateRemainingIR(
         std::move(limit_base), orig_limit->limit_val, orig_limit->offset_val);
   }
 
-  // Step 7: Update join graph for temp table
-  UpdateJoinGraphForTempTable(executed_table_indices, remaining_tables,
-                              temp_table_index, temp_table_name);
-
 #ifndef NDEBUG
   std::cout
       << "[FKBasedSplitter::UpdateRemainingIR] Built new remaining IR with "
@@ -1998,112 +1872,6 @@ FKBasedSplitter::UpdateRemainingIR(
 #endif
 
   return result;
-}
-
-void FKBasedSplitter::UpdateJoinGraphForTempTable(
-    const std::set<unsigned int> &executed_table_indices,
-    const std::set<unsigned int> &remaining_tables,
-    unsigned int temp_table_index, const std::string &temp_table_name) {
-  // Step 1: Expand join graph to accommodate temp table index
-  int required_size = static_cast<int>(temp_table_index) + 1;
-  if (required_size > join_graph_.Size()) {
-    join_graph_.ExpandToSize(required_size);
-  }
-
-  // Step 2: Expand is_relationship_ vector
-  if (temp_table_index >= is_relationship_.size()) {
-    is_relationship_.resize(temp_table_index + 1, false);
-  }
-
-  // Step 3: Add temp table to table_index_to_name_ mapping
-  table_index_to_name_[temp_table_index] = temp_table_name;
-
-  // Step 4: For each remaining table, check if it was connected to any executed
-  // table If so, add an edge between temp table and that remaining table
-  for (unsigned int remaining_idx : remaining_tables) {
-    bool was_connected = false;
-    for (unsigned int executed_idx : executed_table_indices) {
-      // Check both directions
-      if (join_graph_.HasEdge(static_cast<int>(executed_idx),
-                              static_cast<int>(remaining_idx)) ||
-          join_graph_.HasEdge(static_cast<int>(remaining_idx),
-                              static_cast<int>(executed_idx))) {
-        was_connected = true;
-        break;
-      }
-    }
-
-    if (was_connected) {
-      // Add edge based on strategy (following same pattern as BuildJoinGraph)
-      if (strategy_ == SplitStrategy::MIN_SUBQUERY) {
-        // MinSubquery: symmetric (upper triangular)
-        int i = std::min(static_cast<int>(temp_table_index),
-                         static_cast<int>(remaining_idx));
-        int j = std::max(static_cast<int>(temp_table_index),
-                         static_cast<int>(remaining_idx));
-        join_graph_.SetEdge(i, j, true);
-      } else {
-        // EntityCenter/RelationshipCenter: direction based on
-        // entity/relationship Temp table is treated as relationship
-        // (is_relationship_[temp_table_index] = true)
-        bool remaining_is_relationship =
-            (remaining_idx < is_relationship_.size()) &&
-            is_relationship_[remaining_idx];
-
-        if (strategy_ == SplitStrategy::RELATIONSHIP_CENTER) {
-          // RelationshipCenter: relationship -> entity
-          // temp (relationship) -> remaining (entity): graph[temp][remaining]
-          // temp (relationship) <-> remaining (relationship): bidirectional
-          if (!remaining_is_relationship) {
-            // remaining is entity
-            join_graph_.SetEdge(static_cast<int>(temp_table_index),
-                                static_cast<int>(remaining_idx), true);
-          } else {
-            // both relationships: bidirectional
-            join_graph_.SetEdge(static_cast<int>(temp_table_index),
-                                static_cast<int>(remaining_idx), true);
-            join_graph_.SetEdge(static_cast<int>(remaining_idx),
-                                static_cast<int>(temp_table_index), true);
-          }
-        } else {
-          // EntityCenter: entity -> relationship
-          // remaining (entity) -> temp (relationship): graph[remaining][temp]
-          // remaining (relationship) <-> temp (relationship): bidirectional
-          if (!remaining_is_relationship) {
-            // remaining is entity
-            join_graph_.SetEdge(static_cast<int>(remaining_idx),
-                                static_cast<int>(temp_table_index), true);
-          } else {
-            // both relationships: bidirectional
-            join_graph_.SetEdge(static_cast<int>(temp_table_index),
-                                static_cast<int>(remaining_idx), true);
-            join_graph_.SetEdge(static_cast<int>(remaining_idx),
-                                static_cast<int>(temp_table_index), true);
-          }
-        }
-      }
-
-#ifndef NDEBUG
-      std::cout << "[UpdateJoinGraphForTempTable] Added edge: temp_"
-                << temp_table_index << " <-> " << remaining_idx << std::endl;
-#endif
-    }
-  }
-
-  // Step 5: Remove all edges involving executed tables from the graph
-  // This keeps the graph clean - only remaining tables and temp table have
-  // edges
-  for (unsigned int executed_idx : executed_table_indices) {
-    for (int j = 0; j < join_graph_.Size(); j++) {
-      join_graph_.SetEdge(static_cast<int>(executed_idx), j, false);
-      join_graph_.SetEdge(j, static_cast<int>(executed_idx), false);
-    }
-  }
-
-#ifndef NDEBUG
-  std::cout << "[UpdateJoinGraphForTempTable] Updated join graph:" << std::endl;
-  join_graph_.Print();
-#endif
 }
 
 } // namespace middleware

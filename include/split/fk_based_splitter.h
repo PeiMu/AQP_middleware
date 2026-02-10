@@ -180,14 +180,14 @@ protected:
   CollectExternalJoinAttrs(ir_sql_converter::SimplestStmt *ir,
                            const std::set<unsigned int> &cluster_tables);
 
-  // Update join graph after creating a temp table:
-  // - Remove edges for executed (cluster) tables
-  // - Add edges from temp table to remaining tables that were connected to
-  // cluster
-  void UpdateJoinGraphForTempTable(
+  // Prepare data structures for the next iteration (PostgreSQL Prepare4Next + List2Graph)
+  void PrepareForNextIteration(
       const std::set<unsigned int> &executed_table_indices,
-      const std::set<unsigned int> &remaining_tables,
       unsigned int temp_table_index, const std::string &temp_table_name);
+
+  // Rebuild join_graph_ from scratch using current state
+  // (PostgreSQL List2Graph - called after each iteration)
+  void RebuildJoinGraph();
 
   // Update remaining IR by rebuilding (PostgreSQL style)
   // Because cluster tables may be scattered throughout the tree
@@ -210,8 +210,8 @@ protected:
   ForeignKeyGraph fk_graph_;
   std::vector<bool> is_relationship_;
 
-  // Join pairs from original IR (used for filtering valid join conditions)
-  std::vector<std::pair<unsigned int, unsigned int>> join_pairs_;
+  // Current join pairs (updated each iteration, equivalent to PostgreSQL's Joinlist)
+  std::vector<std::pair<unsigned int, unsigned int>> current_join_pairs_;
 };
 
 // ===== MinSubquery Strategy =====
