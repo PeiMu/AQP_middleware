@@ -134,10 +134,6 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
   }
   splitter_->Preprocess(remaining_ir);
 
-  // Collect table names once from the whole IR
-  table_index_to_name_.clear();
-  CollectTableNames(remaining_ir.get());
-
   // Main loop: while (graph has edges) { extract → execute → merge }
   while (!splitter_->IsComplete(remaining_ir.get())) {
     iteration_count_++;
@@ -306,7 +302,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
   }
 
   // Add temp table to the mapping for future iterations
-  table_index_to_name_[temp_table_index] = temp_table_name;
+  splitter_->AddTableMapping(temp_table_index, temp_table_name);
 
   if (config_.enable_debug_print) {
     std::cout << "[Iteration " << iteration_count_
@@ -675,29 +671,14 @@ void IRQuerySplitter::UpdateRemainingIRIndices(
   UpdateNodeIndices(remaining_ir, temp_table, old_table_indices);
 }
 
-void IRQuerySplitter::CollectTableNames(ir_sql_converter::SimplestStmt *ir) {
-  if (!ir)
-    return;
-
-  if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::ScanNode) {
-    auto *scan = dynamic_cast<ir_sql_converter::SimplestScan *>(ir);
-    if (scan) {
-      table_index_to_name_[scan->GetTableIndex()] = scan->GetTableName();
-    }
-  }
-
-  for (auto &child : ir->children) {
-    CollectTableNames(child.get());
-  }
-}
-
 std::string
 IRQuerySplitter::ComputeColumnAlias(unsigned int table_idx,
                                     const std::string &col_name) const {
-  // SQL generator convention: {table_name}_{column_name}
-  auto it = table_index_to_name_.find(table_idx);
-  if (it != table_index_to_name_.end()) {
-    return it->second + "_" + col_name;
+  // SQL generator convention: {table_name}_{table_index}_{column_name}
+  // Index included to disambiguate when same table appears multiple times
+  std::string table_name = splitter_->GetTableName(table_idx);
+  if (!table_name.empty()) {
+    return table_name + "_" + std::to_string(table_idx) + "_" + col_name;
   }
   // Fallback: use table index if name not found
   return std::to_string(table_idx) + "_" + col_name;

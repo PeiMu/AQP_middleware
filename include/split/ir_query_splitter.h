@@ -123,12 +123,6 @@ private:
   std::vector<TempTableInfo> temp_tables_;
   std::vector<double> iteration_times_;
 
-  // Table index to name mapping (collected once, updated with temp tables)
-  std::map<unsigned int, std::string> table_index_to_name_;
-
-  // Helper: Collect table names from IR (called once at start)
-  void CollectTableNames(ir_sql_converter::SimplestStmt *ir);
-
   // Helper: Compute column alias using SQL generator's convention
   std::string ComputeColumnAlias(unsigned int table_idx,
                                  const std::string &col_name) const;

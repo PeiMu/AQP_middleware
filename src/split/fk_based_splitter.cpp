@@ -22,7 +22,8 @@ void FKBasedSplitter::Preprocess(
 #endif
 
   // Step 1: Collect tables from IR
-  table_index_to_name_ = CollectTables(ir.get());
+  table_index_to_name_.clear();
+  CollectTableNames(ir.get());
 
 #ifndef NDEBUG
   std::cout << "[" << GetStrategyName() << "] Found "
@@ -281,30 +282,6 @@ void FKBasedSplitter::RebuildJoinGraph() {
 #ifndef NDEBUG
   join_graph_.Print();
 #endif
-}
-
-std::map<unsigned int, std::string>
-FKBasedSplitter::CollectTables(const ir_sql_converter::SimplestStmt *ir) {
-  std::map<unsigned int, std::string> tables;
-
-  if (!ir)
-    return tables;
-
-  // Collect Scan nodes
-  if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::ScanNode) {
-    auto *scan = dynamic_cast<const ir_sql_converter::SimplestScan *>(ir);
-    if (scan) {
-      tables[scan->GetTableIndex()] = scan->GetTableName();
-    }
-  }
-
-  // Recursively collect from children
-  for (const auto &child : ir->children) {
-    auto child_tables = CollectTables(child.get());
-    tables.insert(child_tables.begin(), child_tables.end());
-  }
-
-  return tables;
 }
 
 std::vector<std::pair<unsigned int, unsigned int>>

@@ -111,10 +111,6 @@ protected:
   // List2Graph)
   void BuildJoinGraph(const ir_sql_converter::SimplestStmt *ir);
 
-  // Collect table scans from IR
-  std::map<unsigned int, std::string>
-  CollectTables(const ir_sql_converter::SimplestStmt *ir);
-
   // Collect join conditions from IR - returns pairs of (table1_idx, table2_idx)
   std::vector<std::pair<unsigned int, unsigned int>>
   CollectJoinConditions(const ir_sql_converter::SimplestStmt *ir);
@@ -219,7 +215,6 @@ protected:
 
   // Current state
   JoinGraph join_graph_;
-  std::map<unsigned int, std::string> table_index_to_name_;
   ForeignKeyGraph fk_graph_;
   std::vector<bool> is_relationship_;
 

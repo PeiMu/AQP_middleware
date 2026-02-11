@@ -6,6 +6,7 @@
 
 #include "adapters/db_adapter.h"
 #include "simplest_ir.h"
+#include <map>
 #include <memory>
 #include <set>
 #include <utility>
@@ -94,7 +95,37 @@ public:
   // Used to generate new table indices for temp tables
   unsigned int GetMaxTableIndex() const { return max_table_index_; }
 
+  // Table name lookup (used by IRQuerySplitter::ComputeColumnAlias)
+  std::string GetTableName(unsigned int table_idx) const {
+    auto it = table_index_to_name_.find(table_idx);
+    if (it != table_index_to_name_.end()) {
+      return it->second;
+    }
+    return "";
+  }
+
+  // Add a table mapping (used when creating temp tables)
+  void AddTableMapping(unsigned int idx, const std::string &name) {
+    table_index_to_name_[idx] = name;
+  }
+
 protected:
+  // Collect table names from IR scan nodes (shared by all strategies)
+  void CollectTableNames(const ir_sql_converter::SimplestStmt *ir) {
+    if (!ir)
+      return;
+    if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::ScanNode) {
+      auto *scan =
+          dynamic_cast<const ir_sql_converter::SimplestScan *>(ir);
+      if (scan) {
+        table_index_to_name_[scan->GetTableIndex()] = scan->GetTableName();
+      }
+    }
+    for (const auto &child : ir->children) {
+      CollectTableNames(child.get());
+    }
+  }
+
   DBAdapter *adapter_;
 
   // Iteration counter
@@ -105,6 +136,10 @@ protected:
 
   // Track the maximum table index (for generating new temp table indices)
   unsigned int max_table_index_ = 0;
+
+  // Table index to name mapping (collected in Preprocess, updated each
+  // iteration)
+  std::map<unsigned int, std::string> table_index_to_name_;
 };
 
 } // namespace middleware

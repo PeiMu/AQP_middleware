@@ -37,9 +37,10 @@ void TopDownSplitter::Preprocess(
     std::cout << "[TopDownSplitter] ReorderGet disabled, skipping" << std::endl;
   }
 
-  // Collect table indices and find max
-  auto table_indices = CollectTableIndices(ir.get());
-  for (unsigned int idx : table_indices) {
+  // Collect table names and find max index
+  table_index_to_name_.clear();
+  CollectTableNames(ir.get());
+  for (const auto &[idx, name] : table_index_to_name_) {
     if (idx > max_table_index_) {
       max_table_index_ = idx;
     }
