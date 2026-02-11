@@ -44,9 +44,9 @@ public:
 
   // Execute SQL query
   virtual QueryResult ExecuteSQL(const std::string &sql) = 0;
-  virtual void
-  ExecuteSQLandCreateTempTable(const std::string &sql,
-                               const std::string &temp_table_name) = 0;
+  virtual void ExecuteSQLandCreateTempTable(const std::string &sql,
+                                            const std::string &temp_table_name,
+                                            bool update_temp_card) = 0;
 
   // Temp table management
   virtual void CreateTempTable(const std::string &table_name,

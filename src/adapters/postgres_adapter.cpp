@@ -105,7 +105,8 @@ QueryResult PostgreSQLAdapter::ExecuteSQL(const std::string &sql) {
 }
 
 void PostgreSQLAdapter::ExecuteSQLandCreateTempTable(
-    const std::string &sql, const std::string &temp_table_name) {
+    const std::string &sql, const std::string &temp_table_name,
+    bool update_temp_card) {
   CheckConnection();
 
   // Create temp table with query results using CREATE TEMP TABLE AS
@@ -128,7 +129,26 @@ void PostgreSQLAdapter::ExecuteSQLandCreateTempTable(
 
   PQclear(pg_result);
 
+  if (update_temp_card) {
+    // Run ANALYZE so PostgreSQL has accurate stats for cost estimation
+    std::string analyze_sql = "ANALYZE " + temp_table_name;
+    PGresult *analyze_result = PQexec(conn, analyze_sql.c_str());
+    PQclear(analyze_result);
+  }
+
 #ifndef NDEBUG
+  // Debug: verify PostgreSQL's catalog has correct cardinality
+  std::string stats_sql = "SELECT reltuples FROM pg_class WHERE relname = '" +
+                          temp_table_name + "'";
+  PGresult *stats_result = PQexec(conn, stats_sql.c_str());
+  if (PQresultStatus(stats_result) == PGRES_TUPLES_OK &&
+      PQntuples(stats_result) > 0) {
+    std::cout << "[PostgreSQL] " << temp_table_name
+              << " pg_class.reltuples = " << PQgetvalue(stats_result, 0, 0)
+              << std::endl;
+  }
+  PQclear(stats_result);
+
   std::cout << "[PostgreSQL] Created temp table: " << temp_table_name
             << std::endl;
 #endif

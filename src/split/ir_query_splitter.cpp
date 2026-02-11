@@ -270,7 +270,8 @@ bool IRQuerySplitter::ExecuteOneIteration(
               << temp_table_name << std::endl;
   }
 
-  adapter_->ExecuteSQLandCreateTempTable(sub_sql, temp_table_name);
+  adapter_->ExecuteSQLandCreateTempTable(sub_sql, temp_table_name,
+                                         config_.enable_update_temp_card);
 
   // Generate temp table index
   unsigned int temp_table_index =
@@ -352,7 +353,8 @@ TempTableInfo IRQuerySplitter::ExecuteSubIR(
   std::string sub_sql =
       adapter_->GenerateSQL(*sub_ir, adapter_->subquery_index++);
 
-  adapter_->ExecuteSQLandCreateTempTable(sub_sql, temp_table_name);
+  adapter_->ExecuteSQLandCreateTempTable(sub_sql, temp_table_name,
+                                         config_.enable_update_temp_card);
 
   unsigned int temp_table_index = adapter_->subquery_index - 1;
   uint64_t cardinality = adapter_->GetTempTableCardinality(temp_table_name);

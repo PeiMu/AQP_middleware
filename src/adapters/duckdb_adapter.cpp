@@ -169,7 +169,8 @@ QueryResult DuckDBAdapter::ExecuteSQL(const std::string &sql) {
 }
 
 void DuckDBAdapter::ExecuteSQLandCreateTempTable(
-    const std::string &sql, const std::string &temp_table_name) {
+    const std::string &sql, const std::string &temp_table_name,
+    bool update_temp_card) {
   auto context = GetClientContext();
 
   auto duckdb_result = conn->Query(sql);
@@ -233,6 +234,11 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(
   if (context->transaction.IsAutoCommit()) {
     context->transaction.Commit();
   }
+#ifndef NDEBUG
+  std::cout << "[DuckDB] " << temp_table_name
+            << " storage.info->cardinality = " << storage.info->cardinality
+            << std::endl;
+#endif
 }
 
 void DuckDBAdapter::CreateTempTable(const std::string &table_name,

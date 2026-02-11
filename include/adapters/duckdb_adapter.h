@@ -59,9 +59,9 @@ public:
 
   // Execute SQL query
   QueryResult ExecuteSQL(const std::string &sql) override;
-  void
-  ExecuteSQLandCreateTempTable(const std::string &sql,
-                               const std::string &temp_table_name) override;
+  void ExecuteSQLandCreateTempTable(const std::string &sql,
+                                    const std::string &temp_table_name,
+                                    bool update_temp_card) override;
 
   // Temp table management
   void CreateTempTable(const std::string &table_name,

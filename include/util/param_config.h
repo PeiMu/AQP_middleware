@@ -31,10 +31,12 @@ struct ParamConfig {
 
   // Paths
   std::string query_path;  // Either single .sql file or directory for benchmark
-  std::string schema_path; // Path to schema.sql for column index lookup (PostgreSQL only)
+  std::string schema_path; // Path to schema.sql for column index lookup
+                           // (PostgreSQL only)
 
   // Options
   bool enable_reorder_get = true; // Only applies when strategy=TOP_DOWN
+  bool enable_update_temp_card = true;
   bool enable_correctness_check = false;
   bool enable_timing = false;
   bool enable_debug_print = false;
