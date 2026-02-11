@@ -180,10 +180,23 @@ protected:
   CollectExternalJoinAttrs(ir_sql_converter::SimplestStmt *ir,
                            const std::set<unsigned int> &cluster_tables);
 
-  // Prepare data structures for the next iteration (PostgreSQL Prepare4Next + List2Graph)
-  void PrepareForNextIteration(
+  // Move valid join conditions from old IR, filtering out FK-FK joins
+  // Classifies into internal (both remaining) and cross-boundary (one executed)
+  void MoveValidJoins(
+      std::unique_ptr<ir_sql_converter::SimplestStmt> &node,
+      const std::set<unsigned int> &remaining_tables,
       const std::set<unsigned int> &executed_table_indices,
-      unsigned int temp_table_index, const std::string &temp_table_name);
+      std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
+          &internal_joins,
+      std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
+          &cross_boundary_joins);
+
+  // Prepare data structures for the next iteration (PostgreSQL Prepare4Next +
+  // List2Graph)
+  void
+  PrepareForNextIteration(const std::set<unsigned int> &executed_table_indices,
+                          unsigned int temp_table_index,
+                          const std::string &temp_table_name);
 
   // Rebuild join_graph_ from scratch using current state
   // (PostgreSQL List2Graph - called after each iteration)
@@ -210,7 +223,8 @@ protected:
   ForeignKeyGraph fk_graph_;
   std::vector<bool> is_relationship_;
 
-  // Current join pairs (updated each iteration, equivalent to PostgreSQL's Joinlist)
+  // Current join pairs (updated each iteration, equivalent to PostgreSQL's
+  // Joinlist)
   std::vector<std::pair<unsigned int, unsigned int>> current_join_pairs_;
 };
 
