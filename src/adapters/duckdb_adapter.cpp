@@ -193,6 +193,29 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(
   info->temporary = true;
   info->on_conflict = duckdb::OnCreateConflict::ERROR_ON_CONFLICT;
 
+  // Use actual column names from SQL result (matches alias convention)
+  auto &result_names = prepared->GetNames();
+  duckdb::case_insensitive_set_t used_column_names;
+  for (duckdb::idx_t i = 0; i < types.size(); i++) {
+    std::string column_name =
+        (i < result_names.size() && !result_names[i].empty())
+            ? result_names[i]
+            : "col_" + std::to_string(i);
+
+    // Handle duplicate column names
+    std::string unique_column_name = column_name;
+    duckdb::idx_t suffix = 1;
+    while (used_column_names.count(unique_column_name) > 0) {
+      unique_column_name = column_name + "_" + std::to_string(suffix);
+      suffix++;
+    }
+    used_column_names.insert(unique_column_name);
+    info->columns.AddColumn(
+        duckdb::ColumnDefinition(unique_column_name, types[i]));
+    table_column_mappings.emplace(std::make_pair(data_chunk_index, i),
+                                  std::move(unique_column_name));
+  }
+
   // Begin transaction if in auto-commit mode
   if (context->transaction.IsAutoCommit()) {
     context->transaction.BeginTransaction();

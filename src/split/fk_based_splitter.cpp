@@ -926,8 +926,8 @@ FKBasedSplitter::BuildSubIRForCluster(
   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> required_attrs;
   std::set<std::pair<unsigned int, unsigned int>> seen_attrs;
 
-  // 4a: From original target_list
-  for (const auto &attr : ir->target_list) {
+  // Helper to add a cluster attr to required_attrs if not already seen
+  auto AddIfClusterAttr = [&](const ir_sql_converter::SimplestAttr *attr) {
     if (cluster_tables.count(attr->GetTableIndex())) {
       auto key = std::make_pair(attr->GetTableIndex(), attr->GetColumnIndex());
       if (seen_attrs.find(key) == seen_attrs.end()) {
@@ -936,7 +936,47 @@ FKBasedSplitter::BuildSubIRForCluster(
             std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
       }
     }
+  };
+
+  // 4a: From original target_list
+  for (const auto &attr : ir->target_list) {
+    AddIfClusterAttr(attr.get());
   }
+
+  // 4a2: From Aggregate/OrderBy nodes — these reference original table
+  // columns (e.g. MIN(aka_title.title)) that are not in the top-level
+  // target_list when DuckDB's plan separates aggregation into its own node
+  std::function<void(const ir_sql_converter::SimplestStmt *)> CollectPlanAttrs;
+  CollectPlanAttrs = [&](const ir_sql_converter::SimplestStmt *node) {
+    if (!node)
+      return;
+    if (node->GetNodeType() ==
+        ir_sql_converter::SimplestNodeType::AggregateNode) {
+      auto *agg =
+          dynamic_cast<const ir_sql_converter::SimplestAggregate *>(node);
+      if (agg) {
+        for (const auto &fn_pair : agg->agg_fns) {
+          AddIfClusterAttr(fn_pair.first.get());
+        }
+        for (const auto &grp : agg->groups) {
+          AddIfClusterAttr(grp.get());
+        }
+      }
+    }
+    if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::OrderNode) {
+      auto *order =
+          dynamic_cast<const ir_sql_converter::SimplestOrderBy *>(node);
+      if (order) {
+        for (const auto &ord : order->orders) {
+          AddIfClusterAttr(ord.attr.get());
+        }
+      }
+    }
+    for (const auto &child : node->children) {
+      CollectPlanAttrs(child.get());
+    }
+  };
+  CollectPlanAttrs(ir);
 
   // 4b: From external join conditions (attrs needed for remaining plan)
   auto external_attrs = CollectExternalJoinAttrs(ir, cluster_tables);
