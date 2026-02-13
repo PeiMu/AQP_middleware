@@ -10,7 +10,7 @@
 
 namespace middleware {
 
-enum class BackendEngine { DUCKDB, POSTGRESQL };
+enum class BackendEngine { DUCKDB, POSTGRESQL, UMBRA };
 
 enum class SplitStrategy {
   NONE,                // No splitting - execute whole query directly
@@ -33,6 +33,7 @@ struct ParamConfig {
   std::string query_path;  // Either single .sql file or directory for benchmark
   std::string schema_path; // Path to schema.sql for column index lookup
                            // (PostgreSQL only)
+  std::string fkeys_path;  // Path to fkeys.sql for FK extraction from file
 
   // Options
   bool enable_reorder_get = true; // Only applies when strategy=TOP_DOWN
@@ -54,6 +55,8 @@ struct ParamConfig {
       return "DuckDB";
     case BackendEngine::POSTGRESQL:
       return "PostgreSQL";
+    case BackendEngine::UMBRA:
+      return "Umbra";
     default:
       return "Unknown";
     }

@@ -44,7 +44,9 @@ void FKBasedSplitter::Preprocess(
   // Step 2: Update statistics for PostgreSQL (needed for accurate cost
   // estimates) DuckDB maintains statistics automatically, so this is only
   // needed for PostgreSQL
-  if (engine_ == BackendEngine::POSTGRESQL && enable_postgres_analyze_) {
+  if ((engine_ == BackendEngine::POSTGRESQL ||
+       engine_ == BackendEngine::UMBRA) &&
+      enable_postgres_analyze_) {
     for (const auto &[idx, name] : table_index_to_name_) {
       try {
         adapter_->ExecuteSQL("ANALYZE " + name);
@@ -95,6 +97,7 @@ void FKBasedSplitter::Preprocess(
   // Reset state
   split_iteration_ = 0;
   executed_tables_.clear();
+  explain_cache_.clear();
 
 #ifndef NDEBUG
   std::cout << "[" << GetStrategyName() << "] Preprocessing complete"
@@ -512,7 +515,15 @@ FKBasedSplitter::GetClusterCost(const std::vector<int> &cluster,
             std::numeric_limits<double>::max()};
   }
 
-  return adapter_->GetEstimatedCost(sql);
+  // Check cache (safe: non-temp clusters produce same SQL with same stats)
+  auto it = explain_cache_.find(sql);
+  if (it != explain_cache_.end()) {
+    return it->second;
+  }
+
+  auto result = adapter_->GetEstimatedCost(sql);
+  explain_cache_[sql] = result;
+  return result;
 }
 
 bool FKBasedSplitter::NodeContainsAnyTable(

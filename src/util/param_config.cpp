@@ -29,9 +29,11 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
         config.engine = BackendEngine::DUCKDB;
       } else if (engine_str == "postgres" || engine_str == "postgresql") {
         config.engine = BackendEngine::POSTGRESQL;
+      } else if (engine_str == "umbra") {
+        config.engine = BackendEngine::UMBRA;
       } else {
         throw std::runtime_error("Unknown engine: " + arg.substr(9) +
-                                 " (valid: duckdb, postgres)");
+                                 " (valid: duckdb, postgres, umbra)");
       }
     }
     // Parse --db=<value>
@@ -41,6 +43,10 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
     // Parse --schema=<value> (for PostgreSQL column index lookup)
     else if (arg.find("--schema=") == 0) {
       config.schema_path = arg.substr(9);
+    }
+    // Parse --fkeys=<value> (for FK extraction from file)
+    else if (arg.find("--fkeys=") == 0) {
+      config.fkeys_path = arg.substr(8);
     }
     // Parse --split=<value>
     else if (arg.find("--split=") == 0) {
@@ -96,14 +102,17 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
 void ParamConfig::PrintUsage() {
   std::cout << "Usage: AQP_middleware [options]" << std::endl;
   std::cout << "\nOptions:" << std::endl;
-  std::cout << "  --engine=<duckdb|postgres>       Backend engine "
+  std::cout << "  --engine=<duckdb|postgres|umbra>  Backend engine "
                "(default: duckdb)"
             << std::endl;
   std::cout
       << "  --split=<strategy>               Split strategy (default: none)"
       << std::endl;
   std::cout << "  --schema=<path>                  Schema SQL file for column "
-               "index lookup (PostgreSQL)"
+               "index lookup (PostgreSQL/Umbra)"
+            << std::endl;
+  std::cout << "  --fkeys=<path>                   FK constraints SQL file "
+               "(for engines without information_schema)"
             << std::endl;
   std::cout << "    Strategies: none, topdown, minsubquery, "
                "relationship-center, entity-center"

@@ -18,6 +18,10 @@
 #include "adapters/postgres_adapter.h"
 #endif
 
+#ifdef HAVE_UMBRA
+#include "adapters/umbra_adapter.h"
+#endif
+
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -47,6 +51,16 @@ std::unique_ptr<DBAdapter> CreateAdapter(const ParamConfig &config) {
                 << config.db_path_or_connection << std::endl;
     }
     return std::make_unique<PostgreSQLAdapter>(config.db_path_or_connection);
+  }
+#endif
+
+#if defined(HAVE_UMBRA)
+  case BackendEngine::UMBRA: {
+    if (config.enable_debug_print) {
+      std::cout << "[AQP Middleware] Creating Umbra adapter: "
+                << config.db_path_or_connection << std::endl;
+    }
+    return std::make_unique<UmbraAdapter>(config.db_path_or_connection);
   }
 #endif
 
@@ -233,7 +247,8 @@ int main(int argc, char **argv) {
 #ifdef HAVE_POSTGRES
     // Initialize schema parser for PostgreSQL (needed for correct column
     // indices)
-    if (config.engine == BackendEngine::POSTGRESQL &&
+    if ((config.engine == BackendEngine::POSTGRESQL ||
+         config.engine == BackendEngine::UMBRA) &&
         !config.schema_path.empty()) {
       if (!ir_sql_converter::InitSchemaParser(config.schema_path)) {
         std::cerr << "Warning: Failed to load schema, column indices will be 0"

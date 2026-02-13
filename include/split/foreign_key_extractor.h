@@ -61,8 +61,9 @@ private:
 
 class ForeignKeyExtractor {
 public:
-  explicit ForeignKeyExtractor(DBAdapter *adapter, BackendEngine engine)
-      : adapter_(adapter), engine_(engine) {}
+  explicit ForeignKeyExtractor(DBAdapter *adapter, BackendEngine engine,
+                               const std::string &fkeys_path = "")
+      : adapter_(adapter), engine_(engine), fkeys_path_(fkeys_path) {}
 
   // Extract foreign keys for all tables in the given set
   ForeignKeyGraph ExtractForTables(const std::set<std::string> &table_names);
@@ -77,8 +78,13 @@ private:
   std::vector<ForeignKey>
   ExtractFromPostgreSQL(const std::set<std::string> &table_names);
 
+  // Parse FK constraints from an SQL file (ALTER TABLE ... ADD FOREIGN KEY)
+  std::vector<ForeignKey>
+  ExtractFromFile(const std::set<std::string> &table_names);
+
   DBAdapter *adapter_;
   BackendEngine engine_;
+  std::string fkeys_path_;
 };
 
 } // namespace middleware

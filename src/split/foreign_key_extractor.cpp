@@ -6,7 +6,10 @@
 #include "adapters/duckdb_adapter.h"
 #include "adapters/postgres_adapter.h"
 #include "duckdb/planner/constraints/bound_foreign_key_constraint.hpp"
+#include <algorithm>
+#include <fstream>
 #include <iostream>
+#include <regex>
 #include <sstream>
 
 namespace middleware {
@@ -117,13 +120,13 @@ ForeignKeyGraph ForeignKeyExtractor::ExtractForTables(
 
   std::vector<ForeignKey> fks;
 
-  // fixme: now collect foreign ky PG
-
-  //  if (engine_ == BackendEngine::DUCKDB) {
-  //    fks = ExtractFromDuckDB(table_names);
-  //  } else if (engine_ == BackendEngine::POSTGRESQL) {
-  fks = ExtractFromPostgreSQL(table_names);
-  //  }
+  if (!fkeys_path_.empty()) {
+    // Parse FK constraints from file (works for any engine)
+    fks = ExtractFromFile(table_names);
+  } else {
+    // Query the database catalog
+    fks = ExtractFromPostgreSQL(table_names);
+  }
 
   ForeignKeyGraph graph;
   for (const auto &fk : fks) {
@@ -247,21 +250,19 @@ std::vector<ForeignKey> ForeignKeyExtractor::ExtractFromPostgreSQL(
 
   std::vector<ForeignKey> fks;
 
-  // PostgreSQL stores FK constraints in information_schema
+  // Use pg_catalog (works on both PostgreSQL and Umbra)
   std::string query = R"(
    SELECT
-     tc.table_name as fk_table,
-     kcu.column_name as fk_column,
-     ccu.table_name AS pk_table,
-     ccu.column_name AS pk_column
-   FROM information_schema.table_constraints AS tc
-   JOIN information_schema.key_column_usage AS kcu
-     ON tc.constraint_name = kcu.constraint_name
-     AND tc.table_schema = kcu.table_schema
-   JOIN information_schema.constraint_column_usage AS ccu
-     ON ccu.constraint_name = tc.constraint_name
-     AND ccu.table_schema = tc.table_schema
-   WHERE tc.constraint_type = 'FOREIGN KEY'
+     tc.relname AS fk_table,
+     a.attname AS fk_column,
+     rc.relname AS pk_table,
+     ra.attname AS pk_column
+   FROM pg_constraint c
+   JOIN pg_class tc ON c.conrelid = tc.oid
+   JOIN pg_class rc ON c.confrelid = rc.oid
+   JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+   JOIN pg_attribute ra ON ra.attrelid = c.confrelid AND ra.attnum = ANY(c.confkey)
+   WHERE c.contype = 'f'
  )";
 
   // Add table filter if specific tables requested
@@ -274,14 +275,21 @@ std::vector<ForeignKey> ForeignKeyExtractor::ExtractFromPostgreSQL(
       table_list << "'" << table << "'";
       first = false;
     }
-    query += " AND tc.table_name IN (" + table_list.str() + ")";
+    query += " AND tc.relname IN (" + table_list.str() + ")";
   }
 
   try {
-    // fixme: now collect foreign ky PG
-    auto postgres_adapter = std::make_unique<PostgreSQLAdapter>(
-        "host=localhost port=5432 dbname=imdb user=imdb");
-    auto result = postgres_adapter->ExecuteSQL(query);
+    QueryResult result;
+    if (engine_ == BackendEngine::POSTGRESQL ||
+        engine_ == BackendEngine::UMBRA) {
+      // Reuse the existing adapter connection
+      result = adapter_->ExecuteSQL(query);
+    } else {
+      // DuckDB: need a separate PostgreSQL connection for FK metadata
+      auto postgres_adapter = std::make_unique<PostgreSQLAdapter>(
+          "host=localhost port=5432 dbname=imdb user=imdb");
+      result = postgres_adapter->ExecuteSQL(query);
+    }
 
     for (const auto &row : result.rows) {
       if (row.size() >= 4) {
@@ -292,6 +300,73 @@ std::vector<ForeignKey> ForeignKeyExtractor::ExtractFromPostgreSQL(
     std::cerr << "[ForeignKeyExtractor] Error extracting FKs from PostgreSQL: "
               << e.what() << std::endl;
   }
+
+  return fks;
+}
+
+std::vector<ForeignKey>
+ForeignKeyExtractor::ExtractFromFile(const std::set<std::string> &table_names) {
+
+  std::vector<ForeignKey> fks;
+
+  std::ifstream file(fkeys_path_);
+  if (!file.is_open()) {
+    std::cerr << "[ForeignKeyExtractor] Failed to open FK file: " << fkeys_path_
+              << std::endl;
+    return fks;
+  }
+
+  // Line-by-line parser to handle multi-FK ALTER TABLE statements like:
+  //   ALTER TABLE aka_title
+  //   ADD FOREIGN KEY (kind_id) REFERENCES kind_type(id),
+  //   ADD FOREIGN KEY (movie_id) REFERENCES title(id);
+  std::string current_table;
+  std::regex alter_regex(R"(ALTER\s+TABLE\s+(\w+))",
+                         std::regex_constants::icase);
+  std::regex fk_regex(
+      R"(FOREIGN\s+KEY\s*\((\w+)\)\s*REFERENCES\s+(\w+)\s*\((\w+)\))",
+      std::regex_constants::icase);
+
+  std::string line;
+  while (std::getline(file, line)) {
+    // Check for ALTER TABLE to update current table context
+    std::smatch alter_match;
+    if (std::regex_search(line, alter_match, alter_regex)) {
+      current_table = alter_match[1].str();
+      std::transform(current_table.begin(), current_table.end(),
+                     current_table.begin(), ::tolower);
+    }
+
+    // Find FOREIGN KEY ... REFERENCES on this line
+    std::smatch fk_match;
+    if (!current_table.empty() &&
+        std::regex_search(line, fk_match, fk_regex)) {
+      std::string fk_column = fk_match[1].str();
+      std::string pk_table = fk_match[2].str();
+      std::string pk_column = fk_match[3].str();
+
+      std::transform(fk_column.begin(), fk_column.end(), fk_column.begin(),
+                     ::tolower);
+      std::transform(pk_table.begin(), pk_table.end(), pk_table.begin(),
+                     ::tolower);
+      std::transform(pk_column.begin(), pk_column.end(), pk_column.begin(),
+                     ::tolower);
+
+      // Filter: keep FK if either fk_table or pk_table is in the set
+      if (!table_names.empty() &&
+          table_names.find(current_table) == table_names.end() ||
+          table_names.find(pk_table) == table_names.end()) {
+        continue;
+      }
+
+      fks.emplace_back(current_table, fk_column, pk_table, pk_column);
+    }
+  }
+
+#ifndef NDEBUG
+  std::cout << "[ForeignKeyExtractor] Parsed " << fks.size()
+            << " FK(s) from file: " << fkeys_path_ << std::endl;
+#endif
 
   return fks;
 }
