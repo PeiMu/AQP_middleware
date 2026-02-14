@@ -109,35 +109,56 @@ void PostgreSQLAdapter::ExecuteSQLandCreateTempTable(
     bool update_temp_card) {
   CheckConnection();
 
-  // Create temp table with query results using CREATE TEMP TABLE AS
+  // Build SQL: CREATE TEMP TABLE + optional ANALYZE in one round-trip
   std::string create_sql = "CREATE TEMP TABLE " + temp_table_name + " AS (" +
-                           sql.substr(0, sql.size() - 1) + ");";
+                           sql.substr(0, sql.size() - 1) + ")";
 
 #ifndef NDEBUG
   std::cout << "[PostgreSQL] Creating temp table: " << temp_table_name
             << std::endl;
 #endif
 
-  PGresult *pg_result = PQexec(conn, create_sql.c_str());
+  std::string combined_sql;
+  if (update_temp_card) {
+    combined_sql = create_sql + "; ANALYZE " + temp_table_name + ";";
+  } else {
+    combined_sql = create_sql + ";";
+  }
 
-  if (PQresultStatus(pg_result) != PGRES_COMMAND_OK) {
+  // Use PQsendQuery to send all statements in one round-trip
+  // and PQgetResult to retrieve each result individually
+  if (!PQsendQuery(conn, combined_sql.c_str())) {
+    throw std::runtime_error("Failed to send query: " +
+                             std::string(PQerrorMessage(conn)));
+  }
+
+  // First result: CREATE TEMP TABLE — extract row count from command tag
+  PGresult *create_result = PQgetResult(conn);
+  if (!create_result || PQresultStatus(create_result) != PGRES_COMMAND_OK) {
     std::string error_msg =
         "Failed to create temp table: " + std::string(PQerrorMessage(conn));
-    PQclear(pg_result);
+    if (create_result)
+      PQclear(create_result);
+    while (PGresult *r = PQgetResult(conn))
+      PQclear(r);
     throw std::runtime_error(error_msg);
   }
 
-  PQclear(pg_result);
+  // PQcmdTuples returns row count for CREATE TABLE AS (avoids SELECT COUNT(*))
+  const char *cmd_tuples = PQcmdTuples(create_result);
+  if (cmd_tuples && cmd_tuples[0] != '\0') {
+    temp_table_card_[temp_table_name] = std::stoull(cmd_tuples);
+  }
+  PQclear(create_result);
 
-  if (update_temp_card) {
-    // also Run ANALYZE so PostgreSQL has accurate stats for cost estimation
-    std::string analyze_sql = "ANALYZE " + temp_table_name;
-    PGresult *analyze_result = PQexec(conn, analyze_sql.c_str());
-    PQclear(analyze_result);
+  // Drain remaining results (ANALYZE result if present, then NULL terminator)
+  while (PGresult *r = PQgetResult(conn)) {
+    PQclear(r);
   }
 
 #ifndef NDEBUG
   std::cout << "[PostgreSQL] Created temp table: " << temp_table_name
+            << " (rows=" << temp_table_card_[temp_table_name] << ")"
             << std::endl;
 #endif
 }
@@ -192,8 +213,15 @@ bool PostgreSQLAdapter::TempTableExists(const std::string &table_name) {
 
 uint64_t
 PostgreSQLAdapter::GetTempTableCardinality(const std::string &temp_table_name) {
-  CheckConnection();
+  // Check cache first (populated by ExecuteSQLandCreateTempTable via
+  // PQcmdTuples)
+  auto it = temp_table_card_.find(temp_table_name);
+  if (it != temp_table_card_.end()) {
+    return it->second;
+  }
 
+  // Fallback to SELECT COUNT(*)
+  CheckConnection();
   std::string count_sql = "SELECT COUNT(*) FROM " + temp_table_name;
   PGresult *pg_result = PQexec(conn, count_sql.c_str());
 
