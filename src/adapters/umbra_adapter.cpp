@@ -9,11 +9,11 @@ UmbraAdapter::UmbraAdapter(const std::string &connection_string)
     : PostgreSQLAdapter(connection_string) {}
 
 void UmbraAdapter::SetTempTableCardinality(const std::string &temp_table_name,
-                                           uint64_t cardinality) {
+                                           uint64_t estimated_rows) {
   // Try the same UPDATE pg_class approach as PostgreSQL.
   // Umbra may not expose pg_class, so treat failure as non-fatal.
   std::string update_sql =
-      "UPDATE pg_class SET reltuples = " + std::to_string(cardinality) +
+      "UPDATE pg_class SET reltuples = " + std::to_string(estimated_rows) +
       " WHERE relname = '" + temp_table_name + "'";
   PGresult *pg_result = PQexec(GetConnection(), update_sql.c_str());
 
@@ -28,7 +28,36 @@ void UmbraAdapter::SetTempTableCardinality(const std::string &temp_table_name,
 
 #ifndef NDEBUG
   std::cout << "[Umbra] SetTempTableCardinality: " << temp_table_name << " = "
-            << cardinality << std::endl;
+            << estimated_rows << std::endl;
+#endif
+}
+
+void UmbraAdapter::ExecuteSQLandCreateTempTable(
+    const std::string &sql, const std::string &temp_table_name,
+    bool update_temp_card) {
+  CheckConnection();
+
+  // Create temp table with query results using CREATE TEMP TABLE AS
+  std::string create_sql = "CREATE TEMP TABLE " + temp_table_name + " AS (" +
+                           sql.substr(0, sql.size() - 1) + ");";
+#ifndef NDEBUG
+  std::cout << "[Umbra] Creating temp table: " << temp_table_name << std::endl;
+#endif
+
+  PGresult *pg_result = PQexec(GetConnection(), create_sql.c_str());
+
+  if (PQresultStatus(pg_result) != PGRES_COMMAND_OK) {
+    std::string error_msg = "Failed to create temp table: " +
+                            std::string(PQerrorMessage(GetConnection()));
+    PQclear(pg_result);
+    throw std::runtime_error(error_msg);
+  }
+  PQclear(pg_result);
+
+  // Skip ANALYZE — Umbra auto-collects statistics on temp tables.
+
+#ifndef NDEBUG
+  std::cout << "[Umbra] Created temp table: " << temp_table_name << std::endl;
 #endif
 }
 

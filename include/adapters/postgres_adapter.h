@@ -53,7 +53,7 @@ public:
   uint64_t GetTempTableCardinality(const std::string &temp_table_name) override;
 
   void SetTempTableCardinality(const std::string &temp_table_name,
-                               uint64_t cardinality) override;
+                               uint64_t estimated_rows) override;
 
   // Get estimated cost and rows for a query using EXPLAIN
   std::pair<double, double> GetEstimatedCost(const std::string &sql) override;

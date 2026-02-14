@@ -99,10 +99,10 @@ private:
 class FKBasedSplitter : public SplitAlgorithm {
 public:
   FKBasedSplitter(DBAdapter *adapter, BackendEngine engine,
-                  SplitStrategy strategy, bool enable_postgres_analyze,
+                  SplitStrategy strategy, bool enable_analyze,
                   const std::string &fkeys_path = "")
       : SplitAlgorithm(adapter), engine_(engine), strategy_(strategy),
-        enable_postgres_analyze_(enable_postgres_analyze),
+        enable_analyze_(enable_analyze),
         fk_extractor_(adapter, engine, fkeys_path) {}
 
   void Preprocess(std::unique_ptr<ir_sql_converter::SimplestStmt> &ir) override;
@@ -214,7 +214,7 @@ protected:
 
   BackendEngine engine_;
   SplitStrategy strategy_;
-  bool enable_postgres_analyze_;
+  bool enable_analyze_;
   ForeignKeyExtractor fk_extractor_;
 
   // Current state
@@ -236,10 +236,10 @@ protected:
 class MinSubquerySplitter : public FKBasedSplitter {
 public:
   MinSubquerySplitter(DBAdapter *adapter, BackendEngine engine,
-                      bool enable_postgres_analyze,
+                      bool enable_analyze,
                       const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::MIN_SUBQUERY,
-                        enable_postgres_analyze, fkeys_path) {}
+                        enable_analyze, fkeys_path) {}
 
   std::unique_ptr<SubqueryExtraction>
   ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
@@ -258,10 +258,10 @@ private:
 class RelationshipCenterSplitter : public FKBasedSplitter {
 public:
   RelationshipCenterSplitter(DBAdapter *adapter, BackendEngine engine,
-                             bool enable_postgres_analyze,
+                             bool enable_analyze,
                              const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::RELATIONSHIP_CENTER,
-                        enable_postgres_analyze, fkeys_path) {}
+                        enable_analyze, fkeys_path) {}
 
   std::unique_ptr<SubqueryExtraction>
   ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
@@ -281,10 +281,10 @@ private:
 class EntityCenterSplitter : public FKBasedSplitter {
 public:
   EntityCenterSplitter(DBAdapter *adapter, BackendEngine engine,
-                       bool enable_postgres_analyze,
+                       bool enable_analyze,
                        const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::ENTITY_CENTER,
-                        enable_postgres_analyze, fkeys_path) {}
+                        enable_analyze, fkeys_path) {}
 
   std::unique_ptr<SubqueryExtraction>
   ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;

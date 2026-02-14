@@ -44,9 +44,7 @@ void FKBasedSplitter::Preprocess(
   // Step 2: Update statistics for PostgreSQL (needed for accurate cost
   // estimates) DuckDB maintains statistics automatically, so this is only
   // needed for PostgreSQL
-  if ((engine_ == BackendEngine::POSTGRESQL ||
-       engine_ == BackendEngine::UMBRA) &&
-      enable_postgres_analyze_) {
+  if (enable_analyze_) {
     for (const auto &[idx, name] : table_index_to_name_) {
       try {
         adapter_->ExecuteSQL("ANALYZE " + name);

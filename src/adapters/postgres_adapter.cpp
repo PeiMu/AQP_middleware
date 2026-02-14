@@ -208,12 +208,12 @@ PostgreSQLAdapter::GetTempTableCardinality(const std::string &temp_table_name) {
 }
 
 void PostgreSQLAdapter::SetTempTableCardinality(
-    const std::string &temp_table_name, uint64_t cardinality) {
+    const std::string &temp_table_name, uint64_t estimated_rows) {
   CheckConnection();
 
-  // Update pg_class.reltuples so PostgreSQL's planner uses this cardinality
+  // Update pg_class.reltuples so PostgreSQL's planner uses this estimated_rows
   std::string update_sql =
-      "UPDATE pg_class SET reltuples = " + std::to_string(cardinality) +
+      "UPDATE pg_class SET reltuples = " + std::to_string(estimated_rows) +
       " WHERE relname = '" + temp_table_name + "'";
   PGresult *pg_result = PQexec(conn, update_sql.c_str());
 
@@ -226,7 +226,7 @@ void PostgreSQLAdapter::SetTempTableCardinality(
 
 #ifndef NDEBUG
   std::cout << "[PostgreSQL] SetTempTableCardinality: " << temp_table_name
-            << " = " << cardinality << std::endl;
+            << " = " << estimated_rows << std::endl;
 #endif
 }
 
