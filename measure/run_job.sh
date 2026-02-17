@@ -70,7 +70,7 @@ cleanup() {
 	pg_stop
     fi
 }
-#trap cleanup EXIT
+trap cleanup EXIT
 
 ########################################
 # Wait until Umbra is ready
@@ -99,11 +99,11 @@ echo "compilation done"
 ########################################
 # Start Umbra if needed
 ########################################
-#if [[ "$engine" == "umbra" ]]; then
-#    start_umbra
-#else
-#    pg_start
-#fi
+if [[ "$engine" == "umbra" ]]; then
+    start_umbra
+else
+    pg_start
+fi
 
 ########################################
 # ANALYZE

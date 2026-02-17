@@ -1,0 +1,226 @@
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/10a.sql,0.02044783424,0.0028511206876569496,0.01905385214,0.0004980760000000001,0.00035351999999999996,0.01875775114,0.027684254140000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/10b.sql,0.036506966679999996,0.00370584243427726,0.03443513018,0.002473674,0.001641436,0.03328764968,0.04243172068000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/10c.sql,0.025524112320000004,0.004935282011903485,0.02305152442,0.000463994,0.001059284,0.02280842042,0.03494206342
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/11a.sql,0.02391775022,0.006313138020973517,0.027578671220000003,0.00324027,0.004423399999999999,0.01478783172,0.029564897720000004
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/11b.sql,0.006269835740000002,0.0018904940961165246,0.0054267336400000005,0.001051164,0.000466804,0.004703300640000001,0.010292637640000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/11c.sql,0.10364813582000001,0.0005053117240709607,0.10354159502,0.00121112,0.00058986,0.10282635652000001,0.10451617652
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/11d.sql,0.006455461840000001,0.00006861612785117581,0.00642303614,0.00135502,0.000363376,0.006391656640000001,0.006614684640000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/12a.sql,0.00835792944,0.0005030749878011341,0.00823109994,0.001183342,0.0005789959999999998,0.007993051440000001,0.009714218440000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/12b.sql,0.01271351876,0.0005330380205769047,0.012648898660000001,0.00131118,0.00044885599999999997,0.01202208666,0.014090062660000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/12c.sql,0.007871375280000002,0.00008139373966753662,0.00787158148,0.00156396,0.00020934399999999998,0.00769912348,0.007986425480000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/13a.sql,0.00774629754,0.00005984198407742076,0.007756357940000001,0.00132912,0.000441714,0.0076242414399999995,0.007853688440000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/13b.sql,0.008889424880000002,0.00011274745096384424,0.008868317680000001,0.0015262599999999998,0.00022872399999999997,0.00871508868,0.00909494068
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/13c.sql,0.0071991949000000015,0.000096288948767297,0.0072315203000000005,0.0009975599999999995,0.00075994,0.0069822363,0.0072860173
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/13d.sql,0.01838522372,0.0001818083575757721,0.018349270020000003,0.0015366999999999998,0.00021459999999999998,0.01820119552,0.01882241552
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/14a.sql,0.00875845874,0.00009133358477678297,0.008776698940000001,0.0012942799999999999,0.000455196,0.00854144494,0.00887537694
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/14b.sql,0.022888599760000006,0.00015588313062751043,0.022873971060000005,0.0027304680000000002,0.0036940199999999992,0.02269614006,0.023196975060000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/14c.sql,0.00809394252,0.00020968979242535606,0.00803152402,0.0007935040000000001,0.00027300599999999995,0.00793107702,0.00867206102
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/15a.sql,0.008248600380000002,0.00010534269674711929,0.00822106408,0.00139354,0.00037762799999999997,0.008057649580000001,0.008392686580000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/15b.sql,0.013265343200000002,0.009288369480591687,0.0088543779,0.001417064,0.001729788,0.0084137754,0.0375696244
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/15c.sql,0.01047208884,0.0003246175110197813,0.01033677214,0.00139968,0.000366936,0.01027189514,0.01128790914
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/15d.sql,0.0139155717,0.00010209166982281766,0.0139099966,0.0013953399999999997,0.000359694,0.013742008600000001,0.014084947600000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/16a.sql,0.028478307599999995,0.003146216040377788,0.027023877,0.0014713399999999998,0.00046081999999999997,0.026447914000000003,0.035815824
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/16b.sql,0.07447852936,0.0018925128641729832,0.07401179716,0.0010698399999999999,0.0007698480000000001,0.07322095866,0.07958684466
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/16c.sql,0.0351990523,0.0002541289593733429,0.035164431999999995,0.0011878400000000003,0.00060673,0.0347968755,0.0357412255
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/16d.sql,0.033504889659999995,0.00016715959747046807,0.03356145526,0.00121348,0.0005978299999999999,0.03318153826,0.033686537259999996
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/17a.sql,0.040037631280000006,0.00020957977639457525,0.040013326880000005,0.0016482459999999997,0.00029393199999999995,0.03982164288000001,0.04054367088000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/17b.sql,0.0141482086,0.00017198680493834393,0.014121647900000003,0.00083912,0.000913172,0.013963949900000001,0.014539212900000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/17c.sql,0.017878001759999998,0.0037884337819584796,0.01988199806,0.0019300959999999999,0.005161859999999999,0.011085562060000002,0.02062709706
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/17d.sql,0.02076963698,0.0008745157590093944,0.02053162848,0.0011527159999999996,0.00015949999999999997,0.020154239980000002,0.02308849998
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/17e.sql,0.06030566788000001,0.0013585925907284805,0.059935393780000006,0.0013754400000000001,0.00043688,0.059644564780000006,0.06414477978000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/17f.sql,0.05131219608,0.003693225780599005,0.05008159138,0.00130356,0.00050815,0.04985945538,0.061783958380000004
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/18a.sql,0.02116557296,0.00024485361859556915,0.021138726260000004,0.0016818199999999999,0.000152744,0.020757643260000003,0.021641135260000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/18b.sql,0.00668474588,0.00017030767118704777,0.00672445648,0.00141408,0.000346882,0.00636564248,0.00690394248
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/18c.sql,0.03507032016000001,0.00029423965343538806,0.035138585160000006,0.0011394999999999997,0.0006861,0.03448517316000001,0.03555162416
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/19a.sql,0.04627632298,0.015755212638431472,0.055357558480000006,0.0032000099999999997,0.004761639999999999,0.01783459848,0.055908023480000006
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/19b.sql,0.01305399596,0.0011427295822847498,0.01245337426,0.00116688,0.00043788399999999993,0.01236976426,0.015746010260000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/19c.sql,0.034416289,0.0007143184760982853,0.0342014314,0.00184586,0.0028214919999999997,0.0339511304,0.0364200534
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/19d.sql,0.03109904318,0.0002238875078035855,0.03115670018,0.000974344,0.000296246,0.03069397768,0.031392985680000006
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/1a.sql,0.025578237680000004,0.00017026411114008238,0.025580441580000002,0.003751094000000001,0.005197823999999999,0.025256926580000002,0.025910346580000004
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/1b.sql,0.014759922320000002,0.0021546902364384464,0.015728028820000003,0.0038329,0.00212974,0.01059017182,0.01590504282
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/1c.sql,0.01234667696,0.0033285296197041532,0.014224606059999999,0.001252448,0.002712576,0.00590069306,0.014461195060000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/1d.sql,0.006082204580000001,0.00007956956234508834,0.006075373780000001,0.00161316,0.00081281,0.00599245128,0.00624724328
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/20a.sql,0.04212645206,0.0019066338560034977,0.041196763659999996,0.000941784,0.000422058,0.040995366160000005,0.04606098916
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/20b.sql,0.05400387127999999,0.0002638818573916066,0.05410248228,0.0011298600000000003,0.00069378,0.053548878280000003,0.05429046928
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/20c.sql,0.12463410986000001,0.00044831556241413747,0.12469266696000002,0.0008085480000000001,0.0004958899999999999,0.12393526446000001,0.12518958746
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/21a.sql,0.008088640199999999,0.0002345422912621515,0.0079897197,0.00124384,0.000353222,0.0078789707,0.0085813957
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/21b.sql,0.029366134300000003,0.0007417448076875978,0.0290257875,0.00345454,0.004557508,0.0286398775,0.030585483500000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/21c.sql,0.019109881500000002,0.010857924275511228,0.0123801702,0.001780404,0.0017289800000000002,0.0094812072,0.0333894572
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/22a.sql,0.0103298405,0.0002969219823773392,0.010243432,0.00036993999999999986,0.000798846,0.010075193500000001,0.0111230635
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/22b.sql,0.01067959286,0.00006589446454588496,0.010668680560000001,0.00141234,0.000369506,0.010614458560000001,0.010836459560000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/22c.sql,0.0119280073,0.00011917942019609652,0.0119514368,0.00149444,0.0002222,0.0116804118,0.012078952799999999
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/22d.sql,0.01191650302,0.00006691881861844919,0.011931425320000001,0.0013212599999999999,0.00044352399999999994,0.01180511882,0.011998888820000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/23a.sql,0.00826835162,0.0000922048075662118,0.00827153672,0.0012869599999999998,0.000449132,0.008138352720000002,0.008412094719999999
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/23b.sql,0.01138210246,0.000389054871816589,0.01121542596,0.00130042,0.00049409,0.01108734546,0.012370437460000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/23c.sql,0.008892622559999999,0.000043047362146567674,0.008896160560000001,0.0014611119999999999,0.00034552000000000004,0.00883045556,0.00897506356
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/24a.sql,0.012810411780000003,0.00013570756778226396,0.01276203688,0.00128068,0.000476036,0.012644295380000002,0.013112993380000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/24b.sql,0.019338235680000003,0.006731732695610568,0.02192449178,0.00247776,0.001401168,0.00913267778,0.02813377778
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/25a.sql,0.05534012122,0.0008505608581626927,0.05554187042,0.0018645199999999993,0,0.05399870392,0.05654610492
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/25b.sql,0.03698423520000001,0.0008819151314153371,0.0368704762,0.0012609399999999999,0.0005323639999999999,0.03545668020000001,0.0384458962
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/25c.sql,0.1697290454,0.004834284065682163,0.167946592,0.0010915399999999998,0.0007758919999999998,0.16446791600000002,0.176393564
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/26a.sql,0.05843200466,0.0004200448511134798,0.058362722660000005,0.0016529,0.00022085600000000001,0.057724448160000004,0.05925236516000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/26b.sql,0.00897027786,0.00006099479030430916,0.00898168446,0.0012973,0.000544968,0.008834337460000001,0.00905864246
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/26c.sql,0.11050310124,0.00044690029961701427,0.11064437124000001,0.0014476199999999997,0.000386622,0.10960191024,0.11098904124
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/27a.sql,0.009033243220000002,0.00014572498563622448,0.00898027552,0.00147196,0.00037969800000000004,0.008904799520000001,0.009315884520000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/27b.sql,0.02811760572,0.0006714946820835259,0.02770992892,0.002885824,0.003872552,0.02734809842,0.028952180420000004
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/27c.sql,0.028856492500000004,0.00270732395968902,0.0302249753,0.0024580719999999995,0.0031193159999999996,0.0226569128,0.0309742268
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/28a.sql,0.028757450980000005,0.0016048680842504154,0.028244698579999998,0.0008350679999999999,0.00024915999999999995,0.02803265458,0.03330443658
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/28b.sql,0.00986532554,0.00009234478149606257,0.00989423854,0.0010271999999999998,0.00074062,0.00963417454,0.00995328054
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/28c.sql,0.011881894740000003,0.00003318423425530702,0.011879397240000002,0.0013890199999999997,0.000374082,0.011842870740000002,0.01194651774
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/29a.sql,0.06823193520000001,0.0006956100825732449,0.06813846970000001,0.0013328799999999998,0.0005499599999999999,0.06719507820000001,0.0694081802
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/29b.sql,0.02289873572,0.0033411412671456855,0.02187772262,0.00301634,0.00168255,0.017430694620000003,0.028367289620000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/29c.sql,0.01782307382,0.001566320732903649,0.016906484720000003,0.0008797599999999999,0.00009053599999999999,0.01625398522,0.020586887220000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/2a.sql,0.013670560680000002,0.0011679697123511623,0.01333165558,0.0010597199999999999,0.00059512,0.012904811580000002,0.016919838580000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/2b.sql,0.01367429954,0.00028473842008013846,0.013631899740000002,0.00126914,0.0004749,0.01333770274,0.014093608740000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/2c.sql,0.019684694279999998,0.00031858089642552095,0.01974162458,0.004230431999999999,0.00468514,0.01919106208,0.02025148208
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/2d.sql,0.013882853620000002,0.000864764528958311,0.013708422720000002,0.0008921399999999998,0.00004642800000000003,0.013164068220000002,0.016180998220000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/30a.sql,0.06162713148000001,0.0002717731254672221,0.061631945480000005,0.00139026,0.00051275,0.06116059748000001,0.06204245348000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/30b.sql,0.03930856786000001,0.0013045120269637193,0.03890884746000001,0.003264034,0.0017371599999999997,0.03840185396,0.04285727896000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/30c.sql,0.09290610942,0.0005175362513789519,0.09280614951999999,0.001077436,0.00030742,0.09209982702,0.09390731102
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/31a.sql,0.03202970808000001,0.009463862747163003,0.028374719980000004,0.00161932,0.000152164,0.024084782980000004,0.04800230398
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/31b.sql,0.01798492732,0.00027490578155676075,0.01794126532,0.0015454000000000002,0.00021424400000000002,0.01759125232,0.01853568632
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/31c.sql,0.0391326275,0.005766383930560651,0.0373616001,0.0014255200000000002,0.00030785999999999997,0.032136662600000004,0.0501943966
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/32a.sql,0.015724547400000004,0.00015961661798715064,0.0157587723,0.002607532,0.0053720799999999996,0.0155178073,0.015889301300000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/32b.sql,0.011939356719999999,0.004132840518044003,0.01078834372,0.0006636739999999997,0.00008586600000000001,0.01003223772,0.02366889972
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/33a.sql,0.0074109738,0.0000654319354767481,0.007385094,0.0007456599999999998,0.001457872,0.007340056500000001,0.0075289004999999996
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/33b.sql,0.024989164300000002,0.0002769543022798768,0.024951636800000003,0.003186936,0.004196172,0.024483124300000002,0.025423307300000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/33c.sql,0.008070844160000002,0.0004938555529223433,0.00791729846,0.0011419400000000001,0.000293856,0.00784781646,0.00946696846
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/3a.sql,0.021204506340000002,0.00023714714103517136,0.02115707544,0.0012396400000000002,0.000281296,0.020900576940000002,0.02179287694
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/3b.sql,0.005922616879999999,0.0000711639714000936,0.00589414198,0.0013481399999999998,0.000349224,0.005846602980000001,0.006046866980000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/3c.sql,0.011338199640000001,0.00006368562792769244,0.01134775724,0.00131894,0.000449222,0.011237787740000001,0.011437408740000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/4a.sql,0.0071695872800000005,0.0001619549872485492,0.00711395858,0.0009124999999999999,0.00080126,0.0070501745800000005,0.00760664858
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/4b.sql,0.0133262242,0.00035022638958569826,0.0132593754,0.0014538199999999998,0.00023358799999999993,0.012873296900000001,0.0141219359
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/4c.sql,0.0072827836,0.00007136282363621377,0.0072708166000000005,0.0017090400000000002,0,0.0071991876,0.007404219600000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/5a.sql,0.00453081954,0.00007196301823853677,0.00453653354,0.00136966,0.000196116,0.00436814654,0.00461515054
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/5b.sql,0.004448993239999999,0.00007405164456542768,0.00443679744,0.0011577599999999999,0.00041583799999999997,0.00437015944,0.00458008444
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/5c.sql,0.018497319540000005,0.007170797250477629,0.017985889340000002,0.0024088439999999994,0.0034644999999999997,0.01019095534,0.02812735434
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/6a.sql,0.01959557034,0.00010728367404166303,0.019578087940000002,0.0009095660000000002,0.0004472479999999999,0.01943244744,0.01977292044
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/6b.sql,0.02309371252,0.00026446489694189885,0.02310565462,0.0011615400000000002,0.0005802100000000001,0.02263515512,0.023572396120000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/6c.sql,0.02060720106,0.00032848853299985973,0.020472360360000004,0.0014448199999999997,0.000296708,0.020295600860000002,0.021291482860000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/6d.sql,0.02248057788,0.0003060553004478474,0.022336596380000004,0.0012198,0.0005028400000000001,0.022131492880000003,0.023072473880000003
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/6e.sql,0.020344679100000002,0.00024334086123974313,0.0202762338,0.0009955199999999997,0.0007573399999999999,0.020092534800000002,0.0208290078
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/6f.sql,0.22602832312000004,0.0012254072314985091,0.22603731832,0.0013392999999999999,0.0005680240000000001,0.22404724732,0.22853173732
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/7a.sql,0.007877667440000001,0.00007841426091392958,0.007893613640000002,0.001274314,0.00041326799999999995,0.00772300714,0.00800172814
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/7b.sql,0.01048121782,0.00010283388335239196,0.01044471532,0.0018309199999999998,0.000709028,0.01037594282,0.01067887382
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/7c.sql,0.041992827360000005,0.00014381101498316725,0.04197448926000001,0.0014718199999999998,0.00032731599999999997,0.04179098776,0.04228186576
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/8a.sql,0.07127466716,0.0009078739237882706,0.07107302256,0.0015683799999999999,0.0003896479999999999,0.07002086856,0.07312081956000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/8b.sql,0.00760466632,0.0000662221246413244,0.0076061316200000005,0.0016201,0.00015001,0.007481918620000002,0.007726046620000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/8c.sql,0.08123291212,0.0005542366166385093,0.08124240582,0.0014257800000000002,0.00031282200000000003,0.08047233281999999,0.08216638982
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/8d.sql,0.03733063066,0.0005964169317344667,0.03721573066,0.00133456,0.000444932,0.03629389166,0.038419021660000004
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/9a.sql,0.010990918320000001,0.00010112932071148662,0.011035040020000001,0.0013114200000000002,0.00044903,0.010860010020000001,0.011099945020000002
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/9b.sql,0.00963540632,0.0000947517763964234,0.009642541820000001,0.0012567199999999998,0.000510192,0.00946807782,0.009799276820000001
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/9c.sql,0.014388728960000003,0.00012277259872191896,0.01440590906,0.0012796999999999997,0.00045674599999999995,0.01411370456,0.01454048156
+command,mean,stddev,median,user,system,min,max
+PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f /home/pei/Project/benchmarks/imdb_job-postgres/queries/9d.sql,0.0665839335,0.000766295143351901,0.0666157216,0.0009590579999999998,0.000930932,0.0650077661,0.0675009821
