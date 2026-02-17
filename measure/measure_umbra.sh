@@ -3,7 +3,7 @@
 mkdir -p job_result/
 rm -rf compile.log
 
-log_name=official_umbra_job.csv
+log_name=umbra_official.csv
 rm -rf ${log_name}
 
 ########################################
