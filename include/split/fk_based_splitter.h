@@ -147,6 +147,14 @@ protected:
   std::pair<double, double> GetClusterCost(const std::vector<int> &cluster,
                                            ir_sql_converter::SimplestStmt *ir);
 
+  // Batch-evaluate costs for multiple clusters in one round-trip
+  // Checks cache first, then batches all cache misses via
+  // BatchGetEstimatedCosts
+  void
+  BatchEvaluateClusterCosts(const std::vector<std::vector<int>> &clusters,
+                            ir_sql_converter::SimplestStmt *ir,
+                            std::vector<std::pair<double, double>> &results);
+
   // Find the sub-IR node that represents the join of the given cluster tables
   // Returns the lowest common ancestor node that contains all cluster tables
   ir_sql_converter::SimplestStmt *
@@ -236,8 +244,7 @@ protected:
 class MinSubquerySplitter : public FKBasedSplitter {
 public:
   MinSubquerySplitter(DBAdapter *adapter, BackendEngine engine,
-                      bool enable_analyze,
-                      const std::string &fkeys_path = "")
+                      bool enable_analyze, const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::MIN_SUBQUERY,
                         enable_analyze, fkeys_path) {}
 
@@ -281,8 +288,7 @@ private:
 class EntityCenterSplitter : public FKBasedSplitter {
 public:
   EntityCenterSplitter(DBAdapter *adapter, BackendEngine engine,
-                       bool enable_analyze,
-                       const std::string &fkeys_path = "")
+                       bool enable_analyze, const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::ENTITY_CENTER,
                         enable_analyze, fkeys_path) {}
 

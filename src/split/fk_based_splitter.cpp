@@ -47,7 +47,9 @@ void FKBasedSplitter::Preprocess(
   if (enable_analyze_) {
     for (const auto &[idx, name] : table_index_to_name_) {
       try {
-        adapter_->ExecuteSQL("ANALYZE " + name);
+        auto analyze_str =
+            engine_ == BackendEngine::MARIADB ? "ANALYZE TABLE " : "ANALYZE ";
+        adapter_->ExecuteSQL(analyze_str + name);
       } catch (const std::exception &e) {
         // ANALYZE failure is not fatal, just log it
 #ifndef NDEBUG
@@ -522,6 +524,52 @@ FKBasedSplitter::GetClusterCost(const std::vector<int> &cluster,
   auto result = adapter_->GetEstimatedCost(sql);
   explain_cache_[sql] = result;
   return result;
+}
+
+void FKBasedSplitter::BatchEvaluateClusterCosts(
+    const std::vector<std::vector<int>> &clusters,
+    ir_sql_converter::SimplestStmt *ir,
+    std::vector<std::pair<double, double>> &results) {
+  results.resize(clusters.size());
+
+  // Phase 1: Generate SQL for each cluster, check cache
+  std::vector<std::string> all_sqls(clusters.size());
+  // Indices of clusters that need EXPLAIN (cache miss)
+  std::vector<size_t> uncached_indices;
+  std::vector<std::string> uncached_sqls;
+
+  for (size_t i = 0; i < clusters.size(); i++) {
+    std::string sql = GenerateSQLForCluster(clusters[i], ir);
+    all_sqls[i] = sql;
+
+    if (sql.empty()) {
+      results[i] = {std::numeric_limits<double>::max(),
+                    std::numeric_limits<double>::max()};
+      continue;
+    }
+
+    auto it = explain_cache_.find(sql);
+    if (it != explain_cache_.end()) {
+      results[i] = it->second;
+    } else {
+      uncached_indices.push_back(i);
+      uncached_sqls.push_back(sql);
+    }
+  }
+
+  if (uncached_sqls.empty()) {
+    return;
+  }
+
+  // Phase 2: Batch EXPLAIN all cache misses in one round-trip
+  auto batch_results = adapter_->BatchGetEstimatedCosts(uncached_sqls);
+
+  // Phase 3: Populate cache and fill results
+  for (size_t k = 0; k < uncached_indices.size(); k++) {
+    size_t orig_idx = uncached_indices[k];
+    explain_cache_[all_sqls[orig_idx]] = batch_results[k];
+    results[orig_idx] = batch_results[k];
+  }
 }
 
 bool FKBasedSplitter::NodeContainsAnyTable(
@@ -1201,49 +1249,66 @@ std::unique_ptr<SubqueryExtraction> MinSubquerySplitter::ExtractNextSubquery(
 std::pair<int, int>
 MinSubquerySplitter::FindNextPair(ir_sql_converter::SimplestStmt *ir,
                                   double &estimated_rows) {
-  // PostgreSQL-style: evaluate all candidate pairs and select lowest cost
-  // Lines 1267-1304 in query_split.c
-
-  std::pair<int, int> best_pair = {-1, -1};
-  double best_cost = std::numeric_limits<double>::max();
-  estimated_rows = 0;
+  // Phase 1: Collect all candidate pairs
+  std::vector<std::vector<int>> candidate_clusters;
+  std::vector<std::pair<int, int>> candidate_pairs;
 
 #ifndef NDEBUG
   std::cout << "[MinSubquery] Evaluating candidate pairs:" << std::endl;
 #endif
 
   for (int i = 0; i < join_graph_.Size(); i++) {
-    // Skip tables that have already been executed
     if (executed_tables_.count(i)) {
       continue;
     }
-
     for (int j = i + 1; j < join_graph_.Size(); j++) {
-      // Skip tables that have already been executed
       if (executed_tables_.count(j)) {
         continue;
       }
-
       if (!join_graph_.HasEdge(i, j)) {
         continue;
       }
+      candidate_pairs.push_back({i, j});
+      candidate_clusters.push_back({i, j});
+    }
+  }
 
-      // Create cluster for this pair
-      std::vector<int> cluster = {i, j};
-      auto [cost, rows] = GetClusterCost(cluster, ir);
+  if (candidate_clusters.empty()) {
+    return {-1, -1};
+  }
+
+  // Phase 2: Batch evaluate all cluster costs
+  std::vector<std::pair<double, double>> costs;
+  BatchEvaluateClusterCosts(candidate_clusters, ir, costs);
+
+  // Phase 3: Select pair with minimum hybrid_row score = max(rows,1) * cost
+  // Matches PostgreSQL query_split.c order_decision == hybrid_row.
+  // Hard cap: skip candidates with rows > 10M (avoids catastrophic
+  // intermediates).
+  static constexpr double kRowCap = 10000000.0;
+  std::pair<int, int> best_pair = {-1, -1};
+  double best_cost = std::numeric_limits<double>::max();
+  estimated_rows = 0;
+
+  for (size_t k = 0; k < candidate_pairs.size(); k++) {
+    auto [cost, rows] = costs[k];
+    auto [i, j] = candidate_pairs[k];
 
 #ifndef NDEBUG
-      std::cout << "  Pair (" << i << ", " << j << ") ["
-                << table_index_to_name_[i] << ", " << table_index_to_name_[j]
-                << "]: cost=" << cost << ", rows=" << rows << std::endl;
+    std::cout << "  Pair (" << i << ", " << j << ") ["
+              << table_index_to_name_[i] << ", " << table_index_to_name_[j]
+              << "]: cost=" << cost << ", rows=" << rows << std::endl;
 #endif
 
-      // PostgreSQL's tarfunc comparison (simplified: use cost)
-      if (cost < best_cost) {
-        best_cost = cost;
-        best_pair = {i, j};
-        estimated_rows = rows;
-      }
+    if (rows > kRowCap)
+      continue;
+
+    double score_new = std::max(rows, 1.0) * cost;
+    double score_old = std::max(estimated_rows, 1.0) * best_cost;
+    if (score_new < score_old) {
+      best_cost = cost;
+      best_pair = {i, j};
+      estimated_rows = rows;
     }
   }
 
@@ -1332,21 +1397,14 @@ RelationshipCenterSplitter::ExtractNextSubquery(
 
 std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
     ir_sql_converter::SimplestStmt *ir, double &estimated_rows) {
-  // PostgreSQL-style: evaluate all candidate clusters and select lowest cost
-  // Lines 1220-1254 in query_split.c
-
-  std::vector<int> best_cluster;
-  double best_cost = std::numeric_limits<double>::max();
-  estimated_rows = 0;
+  // Phase 1: Collect all candidate clusters (center + outgoing neighbors)
+  std::vector<std::vector<int>> candidate_clusters;
 
 #ifndef NDEBUG
   std::cout << "[RelationshipCenter] Evaluating candidate clusters:"
             << std::endl;
 #endif
 
-  // Try every table as a potential center (PostgreSQL lines 1230-1263)
-  // PostgreSQL does NOT filter by is_relationship - any table with outgoing
-  // edges in the directed graph is a candidate center.
   for (int i = 0; i < join_graph_.Size(); i++) {
     if (executed_tables_.count(i)) {
       continue;
@@ -1358,7 +1416,6 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
     std::vector<int> cluster;
     cluster.push_back(i);
 
-    // Collect tables with outgoing edges (PostgreSQL getRT_2)
     for (int j = 0; j < join_graph_.Size(); j++) {
       if (i == j || executed_tables_.count(j)) {
         continue;
@@ -1372,22 +1429,49 @@ std::vector<int> RelationshipCenterSplitter::FindRelationshipCluster(
       continue;
     }
 
-    auto [cost, rows] = GetClusterCost(cluster, ir);
+    candidate_clusters.push_back(std::move(cluster));
+  }
+
+  if (candidate_clusters.empty()) {
+    return {};
+  }
+
+  // Phase 2: Batch evaluate all cluster costs
+  std::vector<std::pair<double, double>> costs;
+  BatchEvaluateClusterCosts(candidate_clusters, ir, costs);
+
+  // Phase 3: Select cluster with minimum hybrid_row score = max(rows,1) * cost
+  // Matches PostgreSQL query_split.c order_decision == hybrid_row.
+  // Hard cap: skip candidates with rows > 10M (avoids catastrophic
+  // intermediates).
+  static constexpr double kRowCap = 10000000.0;
+  std::vector<int> best_cluster;
+  double best_cost = std::numeric_limits<double>::max();
+  estimated_rows = 0;
+
+  for (size_t idx = 0; idx < candidate_clusters.size(); idx++) {
+    auto [cost, rows] = costs[idx];
 
 #ifndef NDEBUG
-    std::cout << "  Cluster center=" << i << " (" << table_index_to_name_[i]
+    std::cout << "  Cluster center=" << candidate_clusters[idx][0] << " ("
+              << table_index_to_name_[candidate_clusters[idx][0]]
               << "): tables=[";
-    for (size_t k = 0; k < cluster.size(); k++) {
+    for (size_t k = 0; k < candidate_clusters[idx].size(); k++) {
       if (k > 0)
         std::cout << ", ";
-      std::cout << table_index_to_name_[cluster[k]];
+      std::cout << table_index_to_name_[candidate_clusters[idx][k]];
     }
     std::cout << "] cost=" << cost << ", rows=" << rows << std::endl;
 #endif
 
-    if (cost < best_cost) {
+    if (rows > kRowCap)
+      continue;
+
+    double score_new = std::max(rows, 1.0) * cost;
+    double score_old = std::max(estimated_rows, 1.0) * best_cost;
+    if (score_new < score_old) {
       best_cost = cost;
-      best_cluster = cluster;
+      best_cluster = candidate_clusters[idx];
       estimated_rows = rows;
     }
   }
@@ -1476,20 +1560,13 @@ std::unique_ptr<SubqueryExtraction> EntityCenterSplitter::ExtractNextSubquery(
 std::vector<int>
 EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir,
                                         double &estimated_rows) {
-  // PostgreSQL-style: evaluate all candidate clusters and select lowest cost
-  // Inverse of RelationshipCenter
-
-  std::vector<int> best_cluster;
-  double best_cost = std::numeric_limits<double>::max();
-  estimated_rows = 0;
+  // Phase 1: Collect all candidate clusters (center + outgoing neighbors)
+  std::vector<std::vector<int>> candidate_clusters;
 
 #ifndef NDEBUG
   std::cout << "[EntityCenter] Evaluating candidate clusters:" << std::endl;
 #endif
 
-  // Try every table as a potential center (PostgreSQL lines 1230-1263)
-  // PostgreSQL does NOT filter by is_relationship - any table with outgoing
-  // edges in the directed graph is a candidate center.
   for (int i = 0; i < join_graph_.Size(); i++) {
     if (executed_tables_.count(i)) {
       continue;
@@ -1501,7 +1578,6 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir,
     std::vector<int> cluster;
     cluster.push_back(i);
 
-    // Collect tables with outgoing edges (PostgreSQL getRT_2)
     for (int j = 0; j < join_graph_.Size(); j++) {
       if (i == j || executed_tables_.count(j)) {
         continue;
@@ -1515,22 +1591,49 @@ EntityCenterSplitter::FindEntityCluster(ir_sql_converter::SimplestStmt *ir,
       continue;
     }
 
-    auto [cost, rows] = GetClusterCost(cluster, ir);
+    candidate_clusters.push_back(std::move(cluster));
+  }
+
+  if (candidate_clusters.empty()) {
+    return {};
+  }
+
+  // Phase 2: Batch evaluate all cluster costs
+  std::vector<std::pair<double, double>> costs;
+  BatchEvaluateClusterCosts(candidate_clusters, ir, costs);
+
+  // Phase 3: Select cluster with minimum hybrid_row score = max(rows,1) * cost
+  // Matches PostgreSQL query_split.c order_decision == hybrid_row.
+  // Hard cap: skip candidates with rows > 10M (avoids catastrophic
+  // intermediates).
+  static constexpr double kRowCap = 10000000.0;
+  std::vector<int> best_cluster;
+  double best_cost = std::numeric_limits<double>::max();
+  estimated_rows = 0;
+
+  for (size_t idx = 0; idx < candidate_clusters.size(); idx++) {
+    auto [cost, rows] = costs[idx];
 
 #ifndef NDEBUG
-    std::cout << "  Cluster center=" << i << " (" << table_index_to_name_[i]
+    std::cout << "  Cluster center=" << candidate_clusters[idx][0] << " ("
+              << table_index_to_name_[candidate_clusters[idx][0]]
               << "): tables=[";
-    for (size_t k = 0; k < cluster.size(); k++) {
+    for (size_t k = 0; k < candidate_clusters[idx].size(); k++) {
       if (k > 0)
         std::cout << ", ";
-      std::cout << table_index_to_name_[cluster[k]];
+      std::cout << table_index_to_name_[candidate_clusters[idx][k]];
     }
     std::cout << "] cost=" << cost << ", rows=" << rows << std::endl;
 #endif
 
-    if (cost < best_cost) {
+    if (rows > kRowCap)
+      continue;
+
+    double score_new = std::max(rows, 1.0) * cost;
+    double score_old = std::max(estimated_rows, 1.0) * best_cost;
+    if (score_new < score_old) {
       best_cost = cost;
-      best_cluster = cluster;
+      best_cluster = candidate_clusters[idx];
       estimated_rows = rows;
     }
   }
