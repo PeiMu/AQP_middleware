@@ -22,6 +22,10 @@
 #include "adapters/umbra_adapter.h"
 #endif
 
+#ifdef HAVE_MARIADB
+#include "adapters/mariadb_adapter.h"
+#endif
+
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -61,6 +65,22 @@ std::unique_ptr<DBAdapter> CreateAdapter(const ParamConfig &config) {
                 << config.db_path_or_connection << std::endl;
     }
     return std::make_unique<UmbraAdapter>(config.db_path_or_connection);
+  }
+#endif
+
+#if defined(HAVE_MARIADB)
+  case BackendEngine::MARIADB: {
+    if (config.enable_debug_print) {
+      std::cout << "[AQP Middleware] Creating MariaDB adapter: "
+                << config.db_path_or_connection << std::endl;
+      if (config.UseCustomEstimator()) {
+        std::cout << "[AQP Middleware] MariaDB estimator: "
+                  << config.GetEstimatorName() << " (" << config.estimator_db
+                  << ")" << std::endl;
+      }
+    }
+    return std::make_unique<MariaDBAdapter>(config.db_path_or_connection,
+                                            config.estimator_db);
   }
 #endif
 
@@ -246,11 +266,11 @@ int main(int argc, char **argv) {
       config.Print();
     }
 
-#ifdef HAVE_POSTGRES
-    // Initialize schema parser for PostgreSQL (needed for correct column
-    // indices)
+#if defined(HAVE_POSTGRES) || defined(HAVE_MARIADB)
+    // Initialize schema parser (needed for correct column indices)
     if ((config.engine == BackendEngine::POSTGRESQL ||
-         config.engine == BackendEngine::UMBRA) &&
+         config.engine == BackendEngine::UMBRA ||
+         config.engine == BackendEngine::MARIADB) &&
         !config.schema_path.empty()) {
       if (!ir_sql_converter::InitSchemaParser(config.schema_path)) {
         std::cerr << "Warning: Failed to load schema, column indices will be 0"
@@ -277,7 +297,7 @@ int main(int argc, char **argv) {
     std::cout << "Execution completed" << std::endl;
     std::cout << "========================================" << std::endl;
 
-#ifdef HAVE_POSTGRES
+#if defined(HAVE_POSTGRES) || defined(HAVE_MARIADB)
     // Cleanup schema parser
     ir_sql_converter::CleanupSchemaParser();
 #endif

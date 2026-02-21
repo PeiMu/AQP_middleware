@@ -222,6 +222,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
               << "] Step 1: Extracting next subquery" << std::endl;
   }
 
+  // todo: potential optimization - Push Partial Aggregation into Sub-IR
   auto extraction = splitter_->ExtractNextSubquery(remaining_ir.get());
 
   if (!extraction) {
