@@ -3,9 +3,8 @@
 mkdir -p job_result/
 rm -rf compile.log
 
-log_name=mariadb_official.csv
+log_name=mariadb_official_result.txt
 rm -rf ${log_name}
-rm -rf temp.csv
 
 ########################################
 # Start / Stop MariaDB
@@ -18,12 +17,12 @@ mariadb_stop() {
     sudo systemctl stop mariadb
 }
 
-cleanup() {
-    mariadb_stop
-}
-trap cleanup EXIT
+#cleanup() {
+#    mariadb_stop
+#}
+#trap cleanup EXIT
 
-mariadb_start
+#mariadb_start
 
 ########################################
 # ANALYZE
@@ -32,15 +31,12 @@ echo "ANALYZING..."
 mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
 echo "ANALYZE done"
 
-dir="$JOB_PATH/mariadb_queries"
-iteration=3
+dir="$JOB_PATH/queries"
 
 for sql in "${dir}"/*.sql; do
-  #echo "hyperfine run ${sql}" 2>&1|tee -a ${log_name}
-  hyperfine --warmup 1 --runs ${iteration} --export-csv temp.csv "mariadb -u imdb -D imdb < ${sql}"
-  cat temp.csv >> ${log_name}
+  echo "Running benchmark for $sql..." | tee -a "$log_name"
+  mariadb -u imdb -D imdb < ${sql} 2>&1 | tee -a "$log_name"
 done
 
 mv ${log_name} job_result/.
-rm -rf temp.csv
 

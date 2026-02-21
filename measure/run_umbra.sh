@@ -3,9 +3,8 @@
 mkdir -p job_result/
 rm -rf compile.log
 
-log_name=umbra_official.csv
+log_name=umbra_official_result.txt
 rm -rf ${log_name}
-rm -rf temp.csv
 
 ########################################
 # Start / Stop Umbra
@@ -60,14 +59,11 @@ PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -c "ANALYZE;"
 echo "ANALYZE done"
 
 dir="$JOB_PATH/queries"
-iteration=10
 
 for sql in "${dir}"/*.sql; do
-  #echo "hyperfine run ${sql}" 2>&1|tee -a ${log_name}
-  hyperfine --warmup 5 --runs ${iteration} --export-csv temp.csv "PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f ${sql}"
-  cat temp.csv >> ${log_name}
+  echo "Running benchmark for $sql..." | tee -a "$log_name"
+  PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -f ${sql} 2>&1 | tee -a "$log_name"
 done
 
 mv ${log_name} job_result/.
-rm -rf temp.csv
 

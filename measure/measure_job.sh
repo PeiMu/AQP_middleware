@@ -29,6 +29,10 @@ start_umbra() {
     docker run -d \
         --name "$container_name" \
         --network=host \
+	--cpuset-cpus="0" \
+        -e OMP_NUM_THREADS=1 \
+        -e OMP_THREAD_LIMIT=1 \
+        -e OMP_PROC_BIND=TRUE \
         -v umbra-db:/var/db \
         -v /tmp:/tmp \
         --ulimit nofile=1048576:1048576 \
@@ -53,9 +57,23 @@ wait_for_umbra() {
     echo "Umbra is ready."
 }
 
+########################################
+# Start / Stop MariaDB
+########################################
+mariadb_start() {
+    sudo systemctl start mariadb
+}
+
+mariadb_stop() {
+    sudo systemctl stop mariadb
+}
+
+
 cleanup() {
     if [[ "$engine" == "umbra" ]]; then
         stop_umbra
+    elif [[ "$engine" == "mariadb" ]]; then
+        mariadb_stop
     else
         pg_stop
     fi
@@ -68,10 +86,12 @@ bash ./compile.sh >> compile.log 2>&1
 echo "compilation done"
 
 ########################################
-# Start Umbra if needed
+# Start Engine
 ########################################
 if [[ "$engine" == "umbra" ]]; then
     start_umbra
+elif [[ "$engine" == "mariadb" ]]; then
+    mariadb_start
 else
     pg_start
 fi
@@ -82,7 +102,9 @@ fi
 echo "ANALYZING..."
 if [[ "$engine" == "umbra" ]]; then
     PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -c "ANALYZE;"
-else
+elif [[ "$engine" == "mariadb" ]]; then
+    mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
+elif [[ "$engine" == "postgres" ]]; then
     psql -U pei -d imdb -c "ANALYZE;"
 fi
 echo "ANALYZE done"

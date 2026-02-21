@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 engine=$1
 log_name=aqp_middleware_${engine}_job.txt
@@ -17,6 +16,9 @@ elif [[ "$engine" == "duckdb" ]]; then
 
 elif [[ "$engine" == "umbra" ]]; then
     db_conn="host=localhost port=5432 user=postgres password=postgres"
+
+elif [[ "$engine" == "mariadb" ]]; then
+    db_conn="host=localhost dbname=imdb user=imdb"
 
 else
     echo "Unknown engine: $engine"
@@ -62,15 +64,28 @@ rm_pg_log() {
   rm $Project_path/logfile
 }
 
-
-cleanup() {
-    if [[ "$engine" == "umbra" ]]; then
-        stop_umbra
-    else
-	pg_stop
-    fi
+########################################
+# Start / Stop MariaDB
+########################################
+mariadb_start() {
+    sudo systemctl start mariadb
 }
-trap cleanup EXIT
+
+mariadb_stop() {
+    sudo systemctl stop mariadb
+}
+
+
+#cleanup() {
+#    if [[ "$engine" == "umbra" ]]; then
+#        stop_umbra
+#    elif [[ "$engine" == "mariadb" ]]; then
+#        mariadb_stop
+#    else
+#	      pg_stop
+#    fi
+#}
+#trap cleanup EXIT
 
 ########################################
 # Wait until Umbra is ready
@@ -92,18 +107,20 @@ rm -f "job_result/${log_name}"
 mkdir -p job_result
 shopt -s nullglob
 
-echo "compiling..."
-bash ./compile.sh >> compile.log 2>&1
-echo "compilation done"
+#echo "compiling..."
+#bash ./compile.sh >> compile.log 2>&1
+#echo "compilation done"
 
-########################################
-# Start Umbra if needed
-########################################
-if [[ "$engine" == "umbra" ]]; then
-    start_umbra
-else
-    pg_start
-fi
+#########################################
+## Start Umbra if needed
+#########################################
+#if [[ "$engine" == "umbra" ]]; then
+#    start_umbra
+#elif [[ "$engine" == "mariadb" ]]; then
+#    mariadb_start
+#else
+#    pg_start
+#fi
 
 ########################################
 # ANALYZE
@@ -111,7 +128,9 @@ fi
 echo "ANALYZING..."
 if [[ "$engine" == "umbra" ]]; then
     PGPASSWORD=postgres psql -p 5432 -h localhost -U postgres -c "ANALYZE;"
-else
+elif [[ "$engine" == "mariadb" ]]; then
+    mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
+elif [[ "$engine" == "postgres" ]]; then
     psql -U pei -d imdb -c "ANALYZE;"
 fi
 echo "ANALYZE done"
@@ -126,6 +145,7 @@ for sql in "$dir"/*.sql; do
     ../build/aqp_middleware \
         --engine="${engine}" \
         --db="${db_conn}" \
+	--estimator-db="host=localhost port=5432 dbname=imdb user=pei" \
         --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
         --fkeys=/home/pei/Project/benchmarks/imdb_job-postgres/fkeys.sql \
         --split=relationshipcenter \
