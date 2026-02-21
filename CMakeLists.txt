@@ -110,6 +110,39 @@ if (HAVE_POSTGRES)
     message(STATUS "Umbra adapter: ENABLED")
 endif ()
 
+# MariaDB
+set(MARIADB_ROOT "/usr/local/mysql" CACHE PATH "MariaDB lib/inc path")
+set(HAVE_MARIADB FALSE)
+if (EXISTS ${MARIADB_ROOT})
+    message(STATUS "Found MariaDB at: ${MARIADB_ROOT}")
+
+    find_library(LIBMARIADB_LIB
+            NAMES mariadb mysqlclient
+            PATHS ${MARIADB_ROOT}/lib
+            NO_DEFAULT_PATH
+    )
+
+    if (LIBMARIADB_LIB)
+        set(HAVE_MARIADB TRUE)
+        add_library(mariadb_adapter STATIC src/adapters/mariadb_adapter.cpp src/util/util.cpp)
+        target_include_directories(mariadb_adapter PUBLIC
+                ${MARIADB_ROOT}/include
+                ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+
+        target_compile_definitions(mariadb_adapter PUBLIC HAVE_MARIADB)
+        target_compile_definitions(split_lib PUBLIC HAVE_MARIADB)
+
+        target_link_libraries(mariadb_adapter PUBLIC ${LIBMARIADB_LIB} split_lib)
+
+        message(STATUS "MariaDB adapter: ENABLED")
+    else ()
+        message(WARNING "LIBMARIADB_LIB not found at ${MARIADB_ROOT}/lib")
+    endif ()
+else ()
+    message(WARNING "MariaDB not found at ${MARIADB_ROOT}")
+endif ()
+
 # libpg_query
 set(LIBPG_QUERY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../libpg_query" CACHE PATH "libpg_query source path")
 if (EXISTS ${LIBPG_QUERY_ROOT})
@@ -125,9 +158,16 @@ if (EXISTS ${LIBPG_QUERY_ROOT})
 
     if (LIBPG_QUERY_LIB AND HAVE_POSTGRES)
         target_link_libraries(postgres_adapter PUBLIC ${LIBPG_QUERY_LIB})
-        message(STATUS "libpg_query: ENABLED")
-    else ()
-        message(WARNING "LIBPG_QUERY_LIB not found or not have PostgreSQL")
+        message(STATUS "libpg_query: ENABLED (PostgreSQL)")
+    endif ()
+
+    if (LIBPG_QUERY_LIB AND HAVE_MARIADB)
+        target_link_libraries(mariadb_adapter PUBLIC ${LIBPG_QUERY_LIB})
+        message(STATUS "libpg_query: ENABLED (MariaDB)")
+    endif ()
+
+    if (NOT LIBPG_QUERY_LIB)
+        message(WARNING "LIBPG_QUERY_LIB not found")
     endif ()
 else ()
     message(WARNING "libpg_query not found at ${LIBPG_QUERY_ROOT}")
@@ -161,40 +201,30 @@ if (EXISTS ${IR_CONVERTER_ROOT}/CMakeLists.txt)
         target_link_libraries(test_postgres PUBLIC IR_SQL_Converter_static)
     endif ()
 
-    # Build aqp_middleware executable (unified target for both engines)
-    if (HAVE_DUCKDB AND HAVE_POSTGRES)
+    # Build aqp_middleware executable if any adapter is available
+    if (HAVE_DUCKDB OR HAVE_POSTGRES OR HAVE_MARIADB)
         add_executable(aqp_middleware src/aqp_middleware.cpp)
         target_link_libraries(aqp_middleware PRIVATE
-                duckdb_adapter
-                postgres_adapter
                 split_lib
                 IR_SQL_Converter_static
         )
-        message(STATUS "aqp_middleware: ENABLED (supports both DuckDB and PostgreSQL)")
-    elseif (HAVE_DUCKDB)
-        add_executable(aqp_middleware src/aqp_middleware.cpp)
-        target_link_libraries(aqp_middleware PRIVATE
-                duckdb_adapter
-                split_lib
-                IR_SQL_Converter_static
-        )
-        message(STATUS "aqp_middleware: ENABLED (DuckDB only)")
-    elseif (HAVE_POSTGRES)
-        add_executable(aqp_middleware src/aqp_middleware.cpp)
-        target_link_libraries(aqp_middleware PRIVATE
-                postgres_adapter
-                split_lib
-                IR_SQL_Converter_static
-        )
-        message(STATUS "aqp_middleware: ENABLED (PostgreSQL only)")
+
+        if (HAVE_DUCKDB)
+            target_link_libraries(aqp_middleware PRIVATE duckdb_adapter)
+        endif ()
+        if (HAVE_POSTGRES)
+            target_link_libraries(aqp_middleware PRIVATE postgres_adapter)
+        endif ()
+        if (HAVE_UMBRA)
+            target_link_libraries(aqp_middleware PRIVATE umbra_adapter)
+        endif ()
+        if (HAVE_MARIADB)
+            target_link_libraries(aqp_middleware PRIVATE mariadb_adapter)
+        endif ()
+
+        message(STATUS "aqp_middleware: ENABLED")
     else ()
         message(WARNING "aqp_middleware: DISABLED (no database adapter available)")
-    endif ()
-
-    # Link Umbra adapter if available
-    if (HAVE_UMBRA AND TARGET aqp_middleware)
-        target_link_libraries(aqp_middleware PRIVATE umbra_adapter)
-        message(STATUS "aqp_middleware: Umbra support added")
     endif ()
 else ()
     message(WARNING "IR_SQL_Converter source not found at ${IR_CONVERTER_ROOT}")

@@ -63,14 +63,26 @@ public:
   // Override the engine's internal cardinality for a temp table
   // Used for A/B testing: sets the engine's stats to an estimated value
   // so that subsequent EXPLAIN queries use the overridden cardinality
-  virtual void
-  SetTempTableCardinality(const std::string &temp_table_name,
-                          uint64_t cardinality) = 0;
+  virtual void SetTempTableCardinality(const std::string &temp_table_name,
+                                       uint64_t cardinality) = 0;
 
   // Get estimated cost and rows for a query using EXPLAIN
   // Returns {estimated_cost, estimated_rows}
   virtual std::pair<double, double>
   GetEstimatedCost(const std::string &sql) = 0;
+
+  // Batch version: evaluate multiple EXPLAIN queries in one round-trip
+  // Default implementation calls GetEstimatedCost sequentially (fine for
+  // in-process engines like DuckDB; overridden for network-based engines)
+  virtual std::vector<std::pair<double, double>>
+  BatchGetEstimatedCosts(const std::vector<std::string> &sqls) {
+    std::vector<std::pair<double, double>> results;
+    results.reserve(sqls.size());
+    for (const auto &sql : sqls) {
+      results.push_back(GetEstimatedCost(sql));
+    }
+    return results;
+  }
 
   virtual std::string GetEngineName() const = 0;
 
