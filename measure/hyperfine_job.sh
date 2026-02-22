@@ -2,7 +2,11 @@
 
 engine=$1
 log_name=aqp_middleware_${engine}_job.csv
-dir="$JOB_PATH/queries"
+if [[ "$engine" == "mariadb" ]]; then
+    dir="$JOB_PATH/mariadb_queries"
+else 
+    dir="$JOB_PATH/queries"
+fi
 
 rm -rf temp.csv
 
