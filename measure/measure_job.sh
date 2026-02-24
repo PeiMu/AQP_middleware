@@ -74,7 +74,7 @@ cleanup() {
         stop_umbra
     elif [[ "$engine" == "mariadb" ]]; then
         mariadb_stop
-    else
+    elif [[ "$engine" == "postgres" ]]; then
         pg_stop
     fi
 }
@@ -92,7 +92,7 @@ if [[ "$engine" == "umbra" ]]; then
     start_umbra
 elif [[ "$engine" == "mariadb" ]]; then
     mariadb_start
-else
+elif [[ "$engine" == "postgres" ]]; then
     pg_start
 fi
 
