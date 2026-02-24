@@ -426,14 +426,13 @@ void DuckDBAdapter::ExecuteSQLandCreateTempTable(
   auto created_table = catalog.CreateTable(*context, std::move(info));
   auto &created_table_entry = created_table->Cast<duckdb::TableCatalogEntry>();
   temp_table_card_.emplace(temp_table_name, chunk_size);
-  //  const duckdb::vector<duckdb::unique_ptr<duckdb::BoundConstraint>>
-  //      bound_constraints =
-  //      planner->binder->BindConstraints(created_table_entry);
+  const duckdb::vector<duckdb::unique_ptr<duckdb::BoundConstraint>>
+      bound_constraints = planner->binder->BindConstraints(created_table_entry);
 
   auto &storage = created_table_entry.GetStorage();
-  //  storage.LocalAppend(created_table_entry, *context, subquery_result,
-  //                      bound_constraints, nullptr);
-  storage.LocalAppend(created_table_entry, *context, *subquery_result);
+  storage.LocalAppend(created_table_entry, *context, *subquery_result,
+                      bound_constraints, nullptr);
+  //  storage.LocalAppend(created_table_entry, *context, *subquery_result);
 
   // Commit transaction if in auto-commit mode
   if (context->transaction.IsAutoCommit()) {
@@ -543,11 +542,16 @@ void DuckDBAdapter::SetTempTableCardinality(const std::string &temp_table_name,
   auto &table_entry = catalog.GetEntry<duckdb::TableCatalogEntry>(
       *context, DEFAULT_SCHEMA, temp_table_name);
   auto &storage = table_entry.GetStorage();
-  storage.info->cardinality = cardinality;
+  // Inject the override cardinality into DataTableInfo so that
+  // DataTable::GetTotalRows() (and thus TableScanCardinality) returns
+  // this value instead of the real row count.
+  storage.GetDataTableInfo()->cardinality_override.store(cardinality);
 
   if (context->transaction.IsAutoCommit()) {
     context->transaction.Commit();
   }
+
+  temp_table_card_[temp_table_name] = cardinality;
 
 #ifndef NDEBUG
   std::cout << "[DuckDB] SetTempTableCardinality: " << temp_table_name << " = "

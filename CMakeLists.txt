@@ -21,7 +21,7 @@ target_include_directories(split_lib PUBLIC
 )
 
 # DuckDB
-set(DUCKDB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../duckdb_010" CACHE PATH "DuckDB source path")
+set(DUCKDB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../duckdb_132" CACHE PATH "DuckDB source path")
 set(HAVE_DUCKDB FALSE)
 if (EXISTS ${DUCKDB_ROOT})
     message(STATUS "Found DuckDB source at: ${DUCKDB_ROOT}")
@@ -180,7 +180,7 @@ if (EXISTS ${IR_CONVERTER_ROOT}/CMakeLists.txt)
     message(STATUS "Building IR_SQL_Converter from source at: ${IR_CONVERTER_ROOT}")
 
     # Configure IR_SQL_Converter options before add_subdirectory
-    set(DUCKDB_VERSION_010 ON CACHE BOOL "Build IR_SQL_Converter against DuckDB 0.10.1" FORCE)
+    set(DUCKDB_VERSION_010 OFF CACHE BOOL "Build IR_SQL_Converter against DuckDB 0.10.1" FORCE)
     set(BUILD_TESTING OFF CACHE BOOL "Disable IR_SQL_Converter tests" FORCE)
 
     add_subdirectory(${IR_CONVERTER_ROOT} ${CMAKE_BINARY_DIR}/IR_SQL_Converter)

@@ -31,7 +31,8 @@ echo "ANALYZING..."
 mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
 echo "ANALYZE done"
 
-dir="$JOB_PATH/mariadb_queries"
+#dir="$JOB_PATH/mariadb_queries"
+dir="$JOB_PATH/queries"
 
 for sql in "${dir}"/*.sql; do
   echo "Running benchmark for $sql..." | tee -a "$log_name"

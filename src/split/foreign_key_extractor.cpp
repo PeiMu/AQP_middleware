@@ -196,7 +196,7 @@ std::vector<ForeignKey> ForeignKeyExtractor::ExtractFromDuckDB(
       }
 
       // Get bound constraints from the table entry
-      auto &constraints = table_entry->GetBoundConstraints();
+      auto &constraints = table_entry->GetConstraints();
       auto &columns = table_entry->GetColumns();
 
       for (const auto &constraint : constraints) {
