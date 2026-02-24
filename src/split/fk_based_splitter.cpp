@@ -299,11 +299,15 @@ FKBasedSplitter::CollectJoinConditions(
   if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::JoinNode) {
     auto *join = dynamic_cast<const ir_sql_converter::SimplestJoin *>(ir);
     if (join) {
-      // Extract table indices from join conditions
-      for (const auto &cond : join->join_conditions) {
-        unsigned int left_table = cond->left_attr->GetTableIndex();
-        unsigned int right_table = cond->right_attr->GetTableIndex();
-        joins.emplace_back(left_table, right_table);
+      // Skip Mark joins: they represent IN-clause filters, not real relational
+      // joins between base tables, so they must not appear in the join graph.
+      if (join->GetSimplestJoinType() !=
+          ir_sql_converter::SimplestJoinType::Mark) {
+        for (const auto &cond : join->join_conditions) {
+          unsigned int left_table = cond->left_attr->GetTableIndex();
+          unsigned int right_table = cond->right_attr->GetTableIndex();
+          joins.emplace_back(left_table, right_table);
+        }
       }
     }
   }
@@ -358,12 +362,8 @@ std::set<unsigned int> FKBasedSplitter::CollectTableIndices(
     }
   }
 
-  if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::ChunkNode) {
-    auto *chunk = dynamic_cast<const ir_sql_converter::SimplestChunk *>(node);
-    if (chunk) {
-      indices.insert(chunk->GetTableIndex());
-    }
-  }
+  // ChunkNode is a constant value list used by Mark joins (IN clauses).
+  // It is not a real relational table and must not be counted as one.
 
   for (const auto &child : node->children) {
     auto child_indices = CollectTableIndices(child.get());
@@ -1897,11 +1897,76 @@ FKBasedSplitter::UpdateRemainingIR(
       std::move(temp_scan_base), temp_table_index, temp_table_name);
   temp_scan_node->SetEstimatedCardinality(temp_table_cardinality);
 
-  // 8b: Build scan nodes for remaining tables - move target_list from old IR
+  // 8b: Build scan nodes for remaining tables - move target_list from old IR.
+  // If a scan is wrapped in a Filter->MarkJoin->Chunk subtree (an IN-clause
+  // filter), preserve the whole subtree so the SQL generator can emit
+  // "col IN (...)" instead of dismantling it into a broken inner join.
+  //
+  // Helper: find and extract the Filter(SingleAttr)->MarkJoin->[scan,Chunk]
+  // (or bare MarkJoin->[scan,Chunk]) subtree that wraps `scan_idx`, moving it
+  // out of its slot in the tree (leaves a nullptr in that slot).
+  std::function<std::unique_ptr<ir_sql_converter::SimplestStmt>(
+      std::unique_ptr<ir_sql_converter::SimplestStmt> &, unsigned int)>
+      ExtractMarkJoinSubtree;
+  ExtractMarkJoinSubtree =
+      [&](std::unique_ptr<ir_sql_converter::SimplestStmt> &node,
+          unsigned int scan_idx)
+      -> std::unique_ptr<ir_sql_converter::SimplestStmt> {
+    if (!node)
+      return nullptr;
+
+    // Returns true if `n` is a MarkJoin that directly wraps a scan for scan_idx
+    auto isMarkJoinForScan = [&](ir_sql_converter::SimplestStmt *n) -> bool {
+      if (!n ||
+          n->GetNodeType() != ir_sql_converter::SimplestNodeType::JoinNode)
+        return false;
+      auto *j = dynamic_cast<ir_sql_converter::SimplestJoin *>(n);
+      if (!j ||
+          j->GetSimplestJoinType() != ir_sql_converter::SimplestJoinType::Mark)
+        return false;
+      for (auto &c : j->children) {
+        if (c &&
+            c->GetNodeType() == ir_sql_converter::SimplestNodeType::ScanNode) {
+          auto *s = dynamic_cast<ir_sql_converter::SimplestScan *>(c.get());
+          if (s && s->GetTableIndex() == scan_idx)
+            return true;
+        }
+      }
+      return false;
+    };
+
+    // Case 1: current node IS the MarkJoin wrapping our scan
+    if (isMarkJoinForScan(node.get()))
+      return std::move(node);
+
+    // Case 2: current node is a Filter whose child is the MarkJoin
+    if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::FilterNode &&
+        !node->children.empty() && isMarkJoinForScan(node->children[0].get())) {
+      return std::move(node);
+    }
+
+    // Recurse: look for the target in each child slot
+    for (auto &child : node->children) {
+      auto result = ExtractMarkJoinSubtree(child, scan_idx);
+      if (result)
+        return result;
+    }
+    return nullptr;
+  };
+
   std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> scan_nodes;
   scan_nodes.push_back(std::move(temp_scan_node)); // Add temp table first
 
   for (auto *scan : remaining_scans) {
+    // Check if this scan is wrapped in a Mark-join IN-clause subtree
+    auto mark_subtree =
+        ExtractMarkJoinSubtree(remaining_ir, scan->GetTableIndex());
+    if (mark_subtree) {
+      // Use the entire Filter+MarkJoin+Chunk subtree as the "scan unit"
+      scan_nodes.push_back(std::move(mark_subtree));
+      continue;
+    }
+
     std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> scan_children;
 
     // Move target_list from old scan node (we own remaining_ir)
