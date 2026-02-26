@@ -101,8 +101,8 @@ void IRReorderGet::CollectTableScans(ir_sql_converter::SimplestStmt *node,
   if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::ScanNode) {
     auto *scan = dynamic_cast<ir_sql_converter::SimplestScan *>(node);
     if (scan) {
-//      uint64_t cardinality = scan->GetEstimatedCardinality();
-      tables.emplace_back(scan->GetTableIndex(), 0,
+      uint64_t cardinality = scan->GetEstimatedCardinality();
+      tables.emplace_back(scan->GetTableIndex(), cardinality,
                           scan->GetTableName(), nullptr);
     }
   }
@@ -134,7 +134,11 @@ void IRReorderGet::CollectJoinConditions(
   // Check if this is a Join node
   if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::JoinNode) {
     auto *join = dynamic_cast<ir_sql_converter::SimplestJoin *>(node);
-    if (join) {
+    // Skip MARK and SEMI joins — their conditions involve Chunk (constant list)
+    // nodes that are not real tables, matching DuckDB's ReorderTables behavior.
+    if (join &&
+        join->GetSimplestJoinType() != ir_sql_converter::SimplestJoinType::Mark &&
+        join->GetSimplestJoinType() != ir_sql_converter::SimplestJoinType::Semi) {
       // Clone join conditions
       for (const auto &cond : join->join_conditions) {
         auto cloned_cond = ir_utils::CloneVarComparison(cond.get());
@@ -197,7 +201,7 @@ std::unique_ptr<ir_sql_converter::SimplestStmt> IRReorderGet::RebuildJoinTree(
         ir_sql_converter::SimplestNodeType::StmtNode);
     auto scan_node = std::make_unique<ir_sql_converter::SimplestScan>(
         std::move(base_stmt), current_table_idx, table_info.table_name);
-//    scan_node->SetEstimatedCardinality(table_info.cardinality);
+    scan_node->SetEstimatedCardinality(table_info.cardinality);
 
     if (i == 0) {
       // First table - becomes the base of the tree

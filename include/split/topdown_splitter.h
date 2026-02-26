@@ -40,8 +40,11 @@ public:
       const std::vector<std::string> &column_names) override;
 
 private:
-  // Visit operator tree and identify split points
-  void VisitOperator(ir_sql_converter::SimplestStmt *node, bool is_top_most);
+  // Visit operator tree and identify the next split point.
+  // No parameter: top_most_ is a member variable (mirrors DuckDB's top_most
+  // member in TopDownSplit), reset to true before each call from
+  // ExtractNextSubquery.
+  void SplitIR(ir_sql_converter::SimplestStmt *node);
 
   // Collect all table indices in a subtree
   std::set<unsigned int>
@@ -57,12 +60,38 @@ private:
   CheckSameTableInSubtree(ir_sql_converter::SimplestStmt *node,
                           std::unordered_set<std::string> &seen_tables) const;
 
+  // Collect the minimum set of attributes that the remaining IR needs from
+  // found_split_node_'s subtree.  Mirrors FK-splitter's required_attrs logic:
+  // (a) top-level target_list attrs from subquery tables,
+  // (b) AGGR/ORDER node attrs from subquery tables,
+  // (c) cross-boundary join condition attrs (one side in subquery, other not).
+  std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
+  CollectRequiredAttrs(const ir_sql_converter::SimplestStmt *full_ir,
+                       const std::set<unsigned int> &subquery_tables) const;
+
+  // Wrap found_split_node_ in a SimplestProjection node in-place.
+  // Finds found_split_node_'s parent, extracts it, wraps in a projection with
+  // required_attrs as target_list, puts the projection back.
+  // Updates found_split_node_ to point to the new projection.
+  // Returns pointer to the new projection, or nullptr on failure.
+  ir_sql_converter::SimplestStmt *
+  WrapInProjection(ir_sql_converter::SimplestStmt *remaining_ir,
+                   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
+                       required_attrs);
+
   IRReorderGet reorder_get_;
   bool enable_reorder_;
 
-  // Pointer to the found split point during VisitOperator traversal
+  // Pointer to the found split point during SplitIR traversal
   // This is set during tree traversal and used in ExtractNextSubquery
   ir_sql_converter::SimplestStmt *found_split_node_ = nullptr;
+
+  // Mirrors DuckDB's TopDownSplit::top_most member variable.
+  // Starts true at the beginning of each SplitIR traversal and is set to
+  // false the first time a split-worthy JOIN or top-level FILTER is seen.
+  // Using a member variable (not a parameter) so the flag propagates across
+  // recursive calls through non-split nodes (AGGR, ORDER, LIMIT, etc.).
+  bool top_most_ = true;
 
   // Current subquery index
   int query_split_index_ = 0;

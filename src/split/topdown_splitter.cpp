@@ -52,97 +52,98 @@ void TopDownSplitter::Preprocess(
             << ir->Print(true) << std::endl;
 }
 
-void TopDownSplitter::VisitOperator(ir_sql_converter::SimplestStmt *node,
-                                    bool is_top_most) {
+void TopDownSplitter::SplitIR(ir_sql_converter::SimplestStmt *node) {
   if (!node || found_split_node_) {
     return;
   }
 
-  // Process children from RIGHT to LEFT (following DuckDB pattern)
-  // This ensures we get build side (right child) first in left-deep plans
+  // Process children from RIGHT to LEFT (following DuckDB pattern).
+  // This ensures the build side (right child) is considered first in
+  // left-deep plans, matching DuckDB's VisitOperator traversal order.
   for (int idx = node->children.size() - 1; idx >= 0; idx--) {
     auto *child = node->children[idx].get();
-
     if (!child) {
       continue;
     }
 
-    // Recursively visit this child
-    VisitOperator(child, false);
-
     auto child_type = child->GetNodeType();
-
-    // Check if this child should be a split point
     bool should_split = false;
 
+    // ── STEP 1: Decide split (BEFORE recursing) ──────────────────────────
+    // This mirrors DuckDB's VisitOperator which sets child->split_index
+    // before calling VisitOperator(*child).  The key effect is that
+    // top_most_ is updated here, so the recursive call already sees the
+    // updated value (just like DuckDB's top_most member variable).
     switch (child_type) {
+
     case ir_sql_converter::SimplestNodeType::FilterNode: {
-      // Split at FILTER nodes
-      // Following DuckDB lines 187-234
-      should_split = true;
-      // TODO
-      std::cout << "[TopDownSplitter] Found FILTER split point at child " << idx
-                << std::endl;
+      // DuckDB lines 182-191 (follow_pipeline_breaker=true path):
+      //   if (top_most && 0 == idx) → split, top_most=false
+      // DuckDB lines 211-213:
+      //   if (follow_pipeline_breaker_ && 0 == idx) → break (NO split)
+      // So a FILTER only becomes a subquery when it is the very first
+      // split-worthy node we encounter in the traversal (top_most_=true)
+      // and it is a left/only child (idx==0).  Inner FILTERs that have
+      // been pushed below a JOIN by FilterPushdown are NOT split.
+      if (top_most_ && idx == 0) {
+        top_most_ = false;
+        should_split = true;
+        std::cout << "[TopDownSplitter] Found FILTER split point at child "
+                  << idx << " (top-most)" << std::endl;
+      }
+      // else: non-top-most FILTER at idx==0 → follow_pipeline_breaker break
       break;
     }
 
     case ir_sql_converter::SimplestNodeType::JoinNode: {
-      // Split at JOIN nodes (build side = right child)
-      // Following DuckDB lines 236-264
+      // DuckDB lines 239-274.
       auto *join = dynamic_cast<ir_sql_converter::SimplestJoin *>(child);
       if (join) {
         auto join_type = join->GetSimplestJoinType();
-
-        // Skip SEMI/MARK joins (like DuckDB lines 240-243)
         if (join_type == ir_sql_converter::SimplestJoinType::Semi ||
             join_type == ir_sql_converter::SimplestJoinType::Mark) {
+          // DuckDB lines 243-246: skip SEMI/MARK, set split_index=0
           std::cout << "[TopDownSplitter] Skipping SEMI/MARK join" << std::endl;
-          should_split = false;
         } else {
-          // Split at top-most JOIN or right child (build side)
-          // DuckDB line 246: if (top_most || 1 == idx)
-          // fixme: check if the parent node is join
-          if (is_top_most || idx == 1) {
+          // DuckDB lines 248-253: split if top_most || right child (idx==1)
+          if (top_most_ || idx == 1) {
             should_split = true;
             std::cout << "[TopDownSplitter] Found JOIN split point at child "
-                      << idx << " (build side)" << std::endl;
+                      << idx << (top_most_ ? " (top-most)" : " (build side)")
+                      << std::endl;
           }
+          top_most_ =
+              false; // DuckDB line 274: always clear after any INNER JOIN
         }
       }
       break;
     }
 
     case ir_sql_converter::SimplestNodeType::CrossProductNode: {
-      // Following DuckDB lines 266-274
-      // Split if this is the left child and parent has empty right child
-      if (idx == 0 && node->children.size() == 2 && !node->children[1]) {
-        should_split = true;
-        std::cout << "[TopDownSplitter] Found CROSS_PRODUCT split point"
-                  << std::endl;
-      }
+      // DuckDB lines 277-285: CROSS_PRODUCT only acts as a sibling marker
+      // (sets split_index = current, no increment) when
+      // follow_pipeline_breaker. In the middleware's single-split-per-call
+      // design this is a no-op.
       break;
     }
-
-      //    case ir_sql_converter::SimplestNodeType::AggregateNode: {
-      //      // Aggregate is also a split point
-      //      should_split = true;
-      //      std::cout << "[TopDownSplitter] Found AGGREGATE split point at
-      //      child "
-      //                << idx << std::endl;
-      //      break;
-      //    }
 
     default:
-      should_split = false;
       break;
     }
 
-    // If this is a split point, add to queue
+    // ── STEP 2: Recurse into child (AFTER split decision) ────────────────
+    // By recursing after the decision, top_most_ is already false when
+    // children of a JOIN are visited, so pushed-down FILTERs inside the
+    // join tree will not be mistakenly picked as split points.
+    SplitIR(child);
+
+    // ── STEP 3: Record the split point and stop ───────────────────────────
     if (should_split) {
       query_split_index_++;
       found_split_node_ = child;
       std::cout << "[TopDownSplitter] Added split point #" << query_split_index_
                 << ": " << GetNodeTypeName(child_type) << std::endl;
+      return; // One split per ExtractNextSubquery call — stop here.
     }
   }
 }
@@ -159,9 +160,12 @@ std::unique_ptr<SubqueryExtraction> TopDownSplitter::ExtractNextSubquery(
     return nullptr;
   }
 
-  // Re-visit the UPDATED tree to find the next split point
-  found_split_node_ = nullptr;       // Clear previous
-  VisitOperator(remaining_ir, true); // Re-identify split points
+  // Re-visit the UPDATED tree to find the next split point.
+  // Reset top_most_ to true before each traversal, mirroring DuckDB's
+  // TopDownSplit::Clear() which resets the top_most member between iterations.
+  found_split_node_ = nullptr;
+  top_most_ = true;
+  SplitIR(remaining_ir);
 
   // Check if there are more subqueries to execute
   if (!found_split_node_) {
@@ -185,21 +189,33 @@ std::unique_ptr<SubqueryExtraction> TopDownSplitter::ExtractNextSubquery(
   std::string temp_table_name = "temp_" + std::to_string(split_iteration_);
 
   // Create extraction info
-  // The sub-plan INCLUDES the subquery_node itself
   auto extraction =
       std::make_unique<SubqueryExtraction>(table_indices, temp_table_name);
 
-  // Store pointer to the node that represents this subquery
+  // Wrap found_split_node_ in a Projection with only the columns needed by
+  // the remaining IR.  This gives the sub-query a well-defined SELECT list and
+  // minimises the columns stored in the temp table.
+  auto required_attrs = CollectRequiredAttrs(remaining_ir, table_indices);
+  std::cout << "[TopDownSplitter] Wrapping split node in Projection with "
+            << required_attrs.size() << " required column(s)" << std::endl;
+  WrapInProjection(remaining_ir, std::move(required_attrs));
+  // found_split_node_ now points to the new Projection node
+
+  // Store pointer to the projection (used as both executable IR and replace
+  // target in UpdateRemainingIR)
   extraction->pipeline_breaker_ptr = found_split_node_;
 
   std::cout << "[TopDownSplitter] Extraction complete for "
             << GetNodeTypeName(found_split_node_->GetNodeType()) << std::endl;
 
   // Check for same-table issue
+  // DuckDB's same-table handling is also commented out in top_down.cpp — just
+  // warn and continue rather than crashing.
   std::unordered_set<std::string> table_names_in_subquery;
   if (CheckSameTableInSubtree(found_split_node_, table_names_in_subquery)) {
-    // TODO: implement merge-back logic like DuckDB
-    throw std::runtime_error("todo: fix same-table issue!");
+    std::cerr << "[TopDownSplitter] Warning: same table appears multiple times "
+                 "in subquery subtree; same-table merge not yet implemented"
+              << std::endl;
   }
 
   return extraction;
@@ -424,6 +440,172 @@ TopDownSplitter::UpdateRemainingIR(
 
   // Return the modified IR (same IR, modified in-place)
   return remaining_ir;
+}
+
+std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
+TopDownSplitter::CollectRequiredAttrs(
+    const ir_sql_converter::SimplestStmt *full_ir,
+    const std::set<unsigned int> &subquery_tables) const {
+
+  std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> required_attrs;
+  std::set<std::pair<unsigned int, unsigned int>> seen_attrs;
+
+  auto AddIfSubqueryAttr = [&](const ir_sql_converter::SimplestAttr *attr) {
+    if (!attr)
+      return;
+    if (subquery_tables.count(attr->GetTableIndex())) {
+      auto key = std::make_pair(attr->GetTableIndex(), attr->GetColumnIndex());
+      if (!seen_attrs.count(key)) {
+        seen_attrs.insert(key);
+        required_attrs.push_back(
+            std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
+      }
+    }
+  };
+
+  // (a) Top-level target_list attrs that come from subquery tables
+  for (const auto &attr : full_ir->target_list) {
+    AddIfSubqueryAttr(attr.get());
+  }
+
+  // (b) AGGR/ORDER node attrs that reference subquery tables
+  std::function<void(const ir_sql_converter::SimplestStmt *)> CollectPlanAttrs;
+  CollectPlanAttrs = [&](const ir_sql_converter::SimplestStmt *node) {
+    if (!node)
+      return;
+    if (node->GetNodeType() ==
+        ir_sql_converter::SimplestNodeType::AggregateNode) {
+      auto *agg =
+          dynamic_cast<const ir_sql_converter::SimplestAggregate *>(node);
+      if (agg) {
+        for (const auto &fn_pair : agg->agg_fns) {
+          AddIfSubqueryAttr(fn_pair.first.get());
+        }
+        for (const auto &grp : agg->groups) {
+          AddIfSubqueryAttr(grp.get());
+        }
+      }
+    }
+    if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::OrderNode) {
+      auto *order =
+          dynamic_cast<const ir_sql_converter::SimplestOrderBy *>(node);
+      if (order) {
+        for (const auto &ord : order->orders) {
+          AddIfSubqueryAttr(ord.attr.get());
+        }
+      }
+    }
+    for (const auto &child : node->children) {
+      CollectPlanAttrs(child.get());
+    }
+  };
+  CollectPlanAttrs(full_ir);
+
+  // (c) Cross-boundary join conditions: one attr in subquery, other outside
+  std::function<void(const ir_sql_converter::SimplestStmt *)>
+      CollectCrossBoundary;
+  CollectCrossBoundary = [&](const ir_sql_converter::SimplestStmt *node) {
+    if (!node)
+      return;
+    if (node->GetNodeType() == ir_sql_converter::SimplestNodeType::JoinNode) {
+      auto *join = dynamic_cast<const ir_sql_converter::SimplestJoin *>(node);
+      if (join) {
+        for (const auto &cond : join->join_conditions) {
+          unsigned int left_table = cond->left_attr->GetTableIndex();
+          unsigned int right_table = cond->right_attr->GetTableIndex();
+          bool left_in = subquery_tables.count(left_table) > 0;
+          bool right_in = subquery_tables.count(right_table) > 0;
+          if (left_in && !right_in) {
+            AddIfSubqueryAttr(cond->left_attr.get());
+          }
+          if (right_in && !left_in) {
+            AddIfSubqueryAttr(cond->right_attr.get());
+          }
+        }
+      }
+    }
+    for (const auto &child : node->children) {
+      CollectCrossBoundary(child.get());
+    }
+  };
+  CollectCrossBoundary(full_ir);
+
+  return required_attrs;
+}
+
+ir_sql_converter::SimplestStmt *TopDownSplitter::WrapInProjection(
+    ir_sql_converter::SimplestStmt *remaining_ir,
+    std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
+        required_attrs) {
+
+  if (!remaining_ir || !found_split_node_) {
+    std::cerr << "[TopDownSplitter::WrapInProjection] Error: null input"
+              << std::endl;
+    return nullptr;
+  }
+
+  if (required_attrs.empty()) {
+    std::cerr
+        << "[TopDownSplitter::WrapInProjection] Warning: no required attrs, "
+           "skipping projection wrap"
+        << std::endl;
+    return nullptr;
+  }
+
+  // Find the parent of found_split_node_ and replace the child with a
+  // Projection that wraps it.
+  std::function<bool(ir_sql_converter::SimplestStmt *)> FindAndWrap;
+  FindAndWrap = [&](ir_sql_converter::SimplestStmt *node) -> bool {
+    if (!node)
+      return false;
+    for (size_t i = 0; i < node->children.size(); i++) {
+      if (node->children[i].get() == found_split_node_) {
+        // Extract the split node from its parent
+        auto split_node = std::move(node->children[i]);
+
+        // Build projection target list (clone required_attrs)
+        std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> proj_tgt;
+        for (const auto &attr : required_attrs) {
+          proj_tgt.push_back(
+              std::make_unique<ir_sql_converter::SimplestAttr>(*attr));
+        }
+
+        // Create the projection wrapping the original split node
+        std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>>
+            proj_children;
+        proj_children.push_back(std::move(split_node));
+        auto proj_base = std::make_unique<ir_sql_converter::SimplestStmt>(
+            std::move(proj_children), std::move(proj_tgt),
+            ir_sql_converter::SimplestNodeType::ProjectionNode);
+        auto projection =
+            std::make_unique<ir_sql_converter::SimplestProjection>(
+                std::move(proj_base), 0);
+
+        // Put the projection back at the same child slot
+        node->children[i] = std::move(projection);
+
+        // Update found_split_node_ to the new projection
+        found_split_node_ = node->children[i].get();
+        return true;
+      }
+      if (FindAndWrap(node->children[i].get())) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if (!FindAndWrap(remaining_ir)) {
+    std::cerr << "[TopDownSplitter::WrapInProjection] Warning: could not find "
+                 "split node in tree; skipping projection wrap"
+              << std::endl;
+    return nullptr;
+  }
+
+  std::cout << "[TopDownSplitter::WrapInProjection] Wrapped split node in "
+               "Projection with "
+            << required_attrs.size() << " column(s)" << std::endl;
+  return found_split_node_;
 }
 
 } // namespace middleware
