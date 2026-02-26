@@ -145,7 +145,7 @@ for sql in "$dir"/*.sql; do
     ../build/aqp_middleware \
         --engine="${engine}" \
         --db="${db_conn}" \
-	--estimator-db="host=localhost port=5432 dbname=imdb user=pei" \
+        --estimator-db="host=localhost port=5432 dbname=imdb user=pei" \
         --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
         --fkeys=/home/pei/Project/benchmarks/imdb_job-postgres/fkeys.sql \
         --split=relationshipcenter \
