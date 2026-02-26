@@ -17,6 +17,12 @@ public:
   void SetTempTableCardinality(const std::string &temp_table_name,
                                uint64_t estimated_rows) override;
 
+  // evaluate multiple EXPLAIN queries in one round-trip
+  // Default implementation calls GetEstimatedCost sequentially (fine for
+  // in-process engines like DuckDB; overridden for network-based engines)
+  std::vector<std::pair<double, double>>
+  BatchGetEstimatedCosts(const std::vector<std::string> &sqls) override;
+
   // Umbra auto-populates pg_class.reltuples — cheaper than COUNT(*)
   uint64_t GetTempTableCardinality(const std::string &temp_table_name) override;
 

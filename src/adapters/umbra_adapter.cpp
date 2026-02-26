@@ -88,6 +88,16 @@ UmbraAdapter::GetTempTableCardinality(const std::string &temp_table_name) {
   return PostgreSQLAdapter::GetTempTableCardinality(temp_table_name);
 }
 
+std::vector<std::pair<double, double>>
+UmbraAdapter::BatchGetEstimatedCosts(const std::vector<std::string> &sqls) {
+  std::vector<std::pair<double, double>> results;
+  results.reserve(sqls.size());
+  for (const auto &sql : sqls) {
+    results.push_back(GetEstimatedCost(sql));
+  }
+  return results;
+}
+
 std::pair<double, double>
 UmbraAdapter::GetEstimatedCost(const std::string &sql) {
   CheckConnection();
