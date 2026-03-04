@@ -40,7 +40,7 @@ It can select different engines and split strategies.
 --db="/home/pei/Project/duckdb_132/measure/imdb.db" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
 --fkeys=/home/pei/Project/benchmarks/imdb_job-postgres/fkeys.sql \
---split=node-based \
+--split=relationship-center \
 --check-correctness \
 --debug \
 /home/pei/Project/benchmarks/imdb_job-postgres/queries/1a.sql
@@ -147,7 +147,7 @@ and we need to specify a duckdb's database path to avoid these bugs
 
 ### Whole benchmark
 
-It can also run the whole benchmark.
+It can also run the whole benchmark. For now we only support JOB+IMDB.
 
 E.g.,
 ```bash
@@ -160,6 +160,43 @@ E.g.,
 --debug
 /home/pei/Project/benchmarks/imdb_job-postgres/queries
 ```
+
+### Disable updating cardinality
+
+There's a configuration option `--no-update-temp-card` to disable the feature of updating cardinality. 
+By default, the cardinality updater is enabled.
+
+### Combine sub-sqls
+
+We have the feature of combining all the sub-SQLs into a whole SQL, but keep their execution order, by enabling `--combine-sub-plans`.
+We did this by first run the AQP with split strategies and get sub-SQLs. 
+Then replace the "temp tables" with the corresponding sub-SQL by `WITH` clause.
+
+### Disable analyze
+
+By default, the middleware runs `ANALYZE` for each execution. 
+When measuring performance, we have the `ANALYZE` at the beginning of the measurement script.
+Thus no need to rerun the `ANALYZE` inside of the middleware, and we can disable it by `--no-analyze`
+
+### Check correctness
+
+Now we only check if there's any error report by having `--check-correctness`. 
+We plan to collect the correct result by running the vanilla query first as golden, 
+then compare it with the splitted result. 
+
+### Performance breakdown
+
+We use `std::chrono::high_resolution_clock::time_point` to measure the function-level performance breakdown.
+The time will be saved in `time_log.csv`. 
+You can also run script `bash ./measure_breakdown_time_job.sh` to measure all engines with all split strategies.
+
+### Debug print
+
+You can use `--debug` to print out the necessary log.
+
+### Help
+
+You can check all the config options by `--help`.
 
 ## Measurement Scripts
 Go to directory `measure/`, there is script to run with either engine/split_strategy
