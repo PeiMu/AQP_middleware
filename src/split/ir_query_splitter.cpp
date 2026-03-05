@@ -285,7 +285,8 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
     log_file.close();
   }
 
-  // Print combined CTE if enabled and sub-plans were collected
+  // Print combined sub-plan SQL if enabled (print only; result comes from
+  // final_sql executed via the normal temp-table chain below)
   QueryResult query_result;
   if (config_.enable_sub_plan_combiner && !sub_plan_sqls_.empty()) {
     std::string combined = BuildCombinedSQL(sub_plan_sqls_, final_sql);
@@ -301,6 +302,11 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
     }
     std::cout << "\n=== Combined Sub-Plan SQL ===" << std::endl;
     std::cout << combined << std::endl;
+    // Drop temp tables created by the split loop so the combined SQL can
+    // CREATE them fresh (avoiding "already exists" errors)
+    for (const auto &plan : sub_plan_sqls_) {
+      adapter_->DropTempTable(plan.first);
+    }
     query_result = adapter_->ExecuteSQL(combined);
   } else {
     query_result = adapter_->ExecuteSQL(final_sql);
@@ -850,7 +856,7 @@ IRQuerySplitter::ComputeColumnAlias(unsigned int table_idx,
   return std::to_string(table_idx) + "_" + col_name;
 }
 
-// Strip trailing whitespace and semicolons from a SQL string (invalid in CTEs)
+// Strip trailing whitespace and semicolons from a SQL string
 static std::string StripTrailingSemicolon(const std::string &sql) {
   size_t end = sql.size();
   while (end > 0 &&
@@ -864,14 +870,12 @@ static std::string StripTrailingSemicolon(const std::string &sql) {
 std::string IRQuerySplitter::BuildCombinedSQL(
     const std::vector<std::pair<std::string, std::string>> &sub_plans,
     const std::string &final_sql) const {
-  std::string result = "WITH ";
-  for (size_t i = 0; i < sub_plans.size(); i++) {
-    if (i > 0)
-      result += ",\n";
-    result += sub_plans[i].first + " AS (\n";
-    result += StripTrailingSemicolon(sub_plans[i].second) + "\n)";
+  std::string result;
+  for (const auto &plan : sub_plans) {
+    result += "CREATE TEMP TABLE " + plan.first + " AS\n";
+    result += StripTrailingSemicolon(plan.second) + ";\n\n";
   }
-  result += "\n" + StripTrailingSemicolon(final_sql);
+  result += StripTrailingSemicolon(final_sql) + ";";
   return result;
 }
 
