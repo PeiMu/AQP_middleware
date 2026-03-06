@@ -22,7 +22,7 @@ It can select different engines and split strategies.
 
 #### PostgreSQL
 ```bash
-./build_release/aqp_middleware
+./build_release/aqp_middleware \
 --engine=postgresql \
 --db="host=localhost port=5432 dbname=imdb user=pei" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
@@ -35,7 +35,7 @@ It can select different engines and split strategies.
 
 #### DuckDB
 ```bash
-./build_release/aqp_middleware
+./build_release/aqp_middleware \
 --engine=duckdb \
 --db="/home/pei/Project/duckdb_132/measure/imdb.db" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
@@ -60,7 +60,7 @@ umbradb/umbra:latest \
 umbra-server --address 0.0.0.0 /var/db/imdb.db
 
 # run the aqp_middleware
-../build/aqp_middleware \
+../build_release/aqp_middleware \
 --engine=umbra \
 --db="host=localhost port=5432 user=postgres password=postgres" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
@@ -73,9 +73,22 @@ umbra-server --address 0.0.0.0 /var/db/imdb.db
 
 #### MariaDB
 ```bash
-../build/aqp_middleware \
+../build_release/aqp_middleware \
 --engine=mariadb \
 --db="host=localhost dbname=imdb user=imdb" \
+--schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
+--fkeys=/home/pei/Project/benchmarks/imdb_job-postgres/fkeys.sql \
+--split=relationship-center \
+--check-correctness \
+--debug \
+/home/pei/Project/benchmarks/imdb_job-postgres/queries/1a.sql
+```
+
+#### OpenGauss
+```bash
+./build_release/aqp_middleware \
+--engine=opengauss \
+--db="host=localhost port=7654 dbname=imdb user=imdb password=imdb_132" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
 --fkeys=/home/pei/Project/benchmarks/imdb_job-postgres/fkeys.sql \
 --split=relationship-center \
@@ -88,7 +101,7 @@ umbra-server --address 0.0.0.0 /var/db/imdb.db
 
 #### relationship-center
 ```bash
-./build_release/aqp_middleware
+./build_release/aqp_middleware \
 --engine=postgresql \
 --db="host=localhost port=5432 dbname=imdb user=pei" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
@@ -105,7 +118,7 @@ e.g., `--estimator=postgres --helper-db-path="host=localhost port=5432 dbname=im
 
 #### entity-center
 ```bash
-./build_release/aqp_middleware
+./build_release/aqp_middleware \
 --engine=postgresql \
 --db="host=localhost port=5432 dbname=imdb user=pei" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
@@ -118,7 +131,7 @@ e.g., `--estimator=postgres --helper-db-path="host=localhost port=5432 dbname=im
 
 #### min-subquery
 ```bash
-./build_release/aqp_middleware
+./build_release/aqp_middleware \
 --engine=postgresql \
 --db="host=localhost port=5432 dbname=imdb user=pei" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
@@ -131,7 +144,7 @@ e.g., `--estimator=postgres --helper-db-path="host=localhost port=5432 dbname=im
 
 #### node-based
 ```bash
-./build_release/aqp_middleware
+./build_release/aqp_middleware \
 --engine=postgresql \
 --db="host=localhost port=5432 dbname=imdb user=pei" \
 --helper-db-path="/home/pei/Project/duckdb_132/measure/imdb.db" \

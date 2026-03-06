@@ -26,6 +26,10 @@
 #include "adapters/mariadb_adapter.h"
 #endif
 
+#ifdef HAVE_OPENGAUSS
+#include "adapters/opengauss_adapter.h"
+#endif
+
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -64,6 +68,16 @@ std::unique_ptr<DBAdapter> CreateAdapter(const ParamConfig &config) {
                 << config.db_path_or_connection << std::endl;
     }
     return std::make_unique<UmbraAdapter>(config.db_path_or_connection);
+  }
+#endif
+
+#if defined(HAVE_OPENGAUSS)
+  case BackendEngine::OPENGAUSS: {
+    if (config.enable_debug_print) {
+      std::cout << "[AQP Middleware] Creating OpenGauss adapter: "
+                << config.db_path_or_connection << std::endl;
+    }
+    return std::make_unique<OpenGaussAdapter>(config.db_path_or_connection);
   }
 #endif
 
@@ -288,7 +302,8 @@ int main(int argc, char **argv) {
     // Initialize schema parser (needed for correct column indices)
     if ((config.engine == BackendEngine::POSTGRESQL ||
          config.engine == BackendEngine::UMBRA ||
-         config.engine == BackendEngine::MARIADB) &&
+         config.engine == BackendEngine::MARIADB ||
+         config.engine == BackendEngine::OPENGAUSS) &&
         !config.schema_path.empty()) {
       if (!ir_sql_converter::InitSchemaParser(config.schema_path)) {
         std::cerr << "Warning: Failed to load schema, column indices will be 0"

@@ -23,6 +23,9 @@ elif [[ "$engine" == "umbra" ]]; then
 elif [[ "$engine" == "mariadb" ]]; then
     db_conn="host=localhost dbname=imdb user=imdb"
 
+elif [[ "$engine" == "opengauss" ]]; then
+    db_conn="host=localhost port=7654 dbname=imdb user=imdb password=imdb_132"
+
 else
     echo "Unknown engine: $engine"
     exit 1
@@ -89,14 +92,26 @@ mariadb_stop() {
     sudo systemctl stop mariadb
 }
 
+########################################
+# Start / Stop OpenGauss
+########################################
+opengauss_start() {
+    sudo systemctl start opengauss
+}
+
+opengauss_stop() {
+    sudo systemctl stop opengauss
+}
 
 cleanup() {
     if [[ "$engine" == "umbra" ]]; then
         stop_umbra
     elif [[ "$engine" == "mariadb" ]]; then
         mariadb_stop
+    elif [[ "$engine" == "opengauss" ]]; then
+        opengauss_stop
     elif [[ "$engine" == "postgres" ]]; then
-	pg_stop
+	      pg_stop
     fi
 }
 trap cleanup EXIT
@@ -121,9 +136,9 @@ rm -f "job_result/${log_name}"
 mkdir -p job_result
 shopt -s nullglob
 
-echo "compiling..."
-bash ./compile.sh >> compile.log 2>&1
-echo "compilation done"
+#echo "compiling..."
+#bash ./compile.sh >> compile.log 2>&1
+#echo "compilation done"
 
 ########################################
 # Start Umbra if needed
@@ -132,6 +147,8 @@ if [[ "$engine" == "umbra" ]]; then
     start_umbra
 elif [[ "$engine" == "mariadb" ]]; then
     mariadb_start
+elif [[ "$engine" == "opengauss" ]]; then
+    opengauss_start
 elif [[ "$engine" == "postgres" ]]; then
     pg_start
 fi
@@ -146,16 +163,23 @@ elif [[ "$engine" == "mariadb" ]]; then
     mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
 elif [[ "$engine" == "postgres" ]]; then
     psql -U pei -d imdb -c "ANALYZE;"
+elif [[ "$engine" == "opengauss" ]]; then
+    sudo -i -u opengauss gsql -d imdb -U imdb --host=localhost -p 7654 -W imdb_132 -c "ANALYZE;"
 fi
 echo "ANALYZE done"
 
 ########################################
 # Run benchmark
 ########################################
+cmd_prefix=""
+if [[ "$engine" == "opengauss" ]]; then
+    cmd_prefix="env LD_LIBRARY_PATH=$HOME/gauss_compat_libs"
+fi
+
 for sql in "$dir"/*.sql; do
   echo "Running benchmark for $sql..." | tee -a "$log_name"
   for i in $(eval echo {1.."${iteration}"}); do
-      ../build/aqp_middleware \
+      $cmd_prefix ../build/aqp_middleware \
         --engine="${engine}" \
         --db="${db_conn}" \
         "${helper_db_arg}" \

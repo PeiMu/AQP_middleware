@@ -33,9 +33,12 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
         config.engine = BackendEngine::UMBRA;
       } else if (engine_str == "mariadb") {
         config.engine = BackendEngine::MARIADB;
+      } else if (engine_str == "opengauss") {
+        config.engine = BackendEngine::OPENGAUSS;
       } else {
-        throw std::runtime_error("Unknown engine: " + arg.substr(9) +
-                                 " (valid: duckdb, postgres, umbra, mariadb)");
+        throw std::runtime_error(
+            "Unknown engine: " + arg.substr(9) +
+            " (valid: duckdb, postgres, umbra, mariadb, opengauss)");
       }
     }
     // Parse --db=<value>
@@ -61,9 +64,12 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
         config.estimator_engine = BackendEngine::UMBRA;
       } else if (est_str == "mariadb") {
         config.estimator_engine = BackendEngine::MARIADB;
+      } else if (est_str == "opengauss") {
+        config.estimator_engine = BackendEngine::OPENGAUSS;
       } else {
-        throw std::runtime_error("Unknown estimator engine: " + arg.substr(12) +
-                                 " (valid: duckdb, postgres, umbra, mariadb)");
+        throw std::runtime_error(
+            "Unknown estimator engine: " + arg.substr(12) +
+            " (valid: duckdb, postgres, umbra, mariadb, opengauss)");
       }
     }
     // Parse --helper-db-path=<connection> (connection string for estimator
@@ -131,9 +137,10 @@ ParamConfig ParamConfig::ParseFromArgs(int argc, char **argv) {
 void ParamConfig::PrintUsage() {
   std::cout << "Usage: AQP_middleware [options]" << std::endl;
   std::cout << "\nOptions:" << std::endl;
-  std::cout << "  --engine=<duckdb|postgres|umbra|mariadb>  Backend engine "
-               "(default: duckdb)"
-            << std::endl;
+  std::cout
+      << "  --engine=<duckdb|postgres|umbra|mariadb|opengauss>  Backend engine "
+         "(default: duckdb)"
+      << std::endl;
   std::cout
       << "  --split=<strategy>               Split strategy (default: none)"
       << std::endl;

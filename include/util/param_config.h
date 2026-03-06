@@ -10,7 +10,7 @@
 
 namespace middleware {
 
-enum class BackendEngine { DUCKDB, POSTGRESQL, UMBRA, MARIADB };
+enum class BackendEngine { DUCKDB, POSTGRESQL, UMBRA, MARIADB, OPENGAUSS };
 
 enum class SplitStrategy {
   NONE,                // No splitting - execute whole query directly
@@ -68,6 +68,8 @@ struct ParamConfig {
       return "Umbra";
     case BackendEngine::MARIADB:
       return "MariaDB";
+    case BackendEngine::OPENGAUSS:
+      return "OpenGauss";
     default:
       return "Unknown";
     }
@@ -106,6 +108,8 @@ struct ParamConfig {
       return "Umbra";
     case BackendEngine::MARIADB:
       return "MariaDB";
+    case BackendEngine::OPENGAUSS:
+      return "OpenGauss";
     default:
       return "Unknown";
     }

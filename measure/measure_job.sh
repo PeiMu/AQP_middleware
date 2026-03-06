@@ -70,6 +70,17 @@ mariadb_stop() {
 }
 
 
+########################################
+# Start / Stop OpenGauss
+########################################
+opengauss_start() {
+    sudo systemctl start opengauss
+}
+
+opengauss_stop() {
+    sudo systemctl stop opengauss
+}
+
 cleanup() {
     if [[ "$engine" == "umbra" ]]; then
         stop_umbra
@@ -78,14 +89,16 @@ cleanup() {
         pg_stop
     elif [[ "$engine" == "postgres" ]]; then
         pg_stop
+    elif [[ "$engine" == "opengauss" ]]; then
+        opengauss_stop
     fi
 }
 trap cleanup EXIT
 
 
-echo "compiling..."
-bash ./compile.sh >> compile.log 2>&1
-echo "compilation done"
+#echo "compiling..."
+#bash ./compile.sh >> compile.log 2>&1
+#echo "compilation done"
 
 ########################################
 # Start Engine
@@ -97,6 +110,8 @@ elif [[ "$engine" == "mariadb" ]]; then
     pg_start
 elif [[ "$engine" == "postgres" ]]; then
     pg_start
+elif [[ "$engine" == "opengauss" ]]; then
+    opengauss_start
 fi
 
 ########################################
@@ -109,9 +124,11 @@ elif [[ "$engine" == "mariadb" ]]; then
     mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
 elif [[ "$engine" == "postgres" ]]; then
     psql -U pei -d imdb -c "ANALYZE;"
+elif [[ "$engine" == "opengauss" ]]; then
+    sudo -i -u opengauss gsql -d imdb -U imdb --host=localhost -p 7654 -W imdb_132 -c "ANALYZE;"
 fi
 echo "ANALYZE done"
 
 cd ../measure && bash ./hyperfine_job.sh "${engine}" "${split}"
 
-mv compile.log job_result/.
+#mv compile.log job_result/.

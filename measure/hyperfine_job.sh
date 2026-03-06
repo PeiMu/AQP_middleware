@@ -3,7 +3,7 @@
 engine=$1
 split=$2
 
-log_name=aqp_middleware_${engine}_job.csv
+log_name=aqp_middleware_${engine}_${split}_job.csv
 if [[ "$engine" == "mariadb" ]]; then
     dir="$JOB_PATH/mariadb_queries"
 else 
@@ -27,6 +27,9 @@ elif [[ "$engine" == "umbra" ]]; then
 elif [[ "$engine" == "mariadb" ]]; then
     db_conn="host=localhost dbname=imdb user=imdb"
 
+elif [[ "$engine" == "opengauss" ]]; then
+    db_conn="host=localhost port=7654 dbname=imdb user=imdb password=imdb_132"
+
 else
     echo "Unknown engine: $engine"
     exit 1
@@ -46,6 +49,11 @@ fi
 rm -f "${log_name}"
 rm -f "job_result/${log_name}"
 
+cmd_prefix=""
+if [[ "$engine" == "opengauss" ]]; then
+    cmd_prefix="LD_LIBRARY_PATH=$HOME/gauss_compat_libs "
+fi
+
 if [[ "$engine" == "mariadb" ]]; then
     warmup=1
     iteration=3
@@ -58,7 +66,7 @@ for sql in "${dir}"/*.sql; do
     echo "Running benchmark for ${sql}..."
 
     hyperfine --warmup ${warmup} --runs ${iteration} --export-csv temp.csv \
-    "../build/aqp_middleware --engine=${engine} \
+    "${cmd_prefix}../build/aqp_middleware --engine=${engine} \
     --db=\"${db_conn}\" \
     \"${helper_db_arg}\" \
     --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \

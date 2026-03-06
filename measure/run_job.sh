@@ -21,6 +21,9 @@ elif [[ "$engine" == "umbra" ]]; then
 elif [[ "$engine" == "mariadb" ]]; then
     db_conn="host=localhost dbname=imdb user=imdb"
 
+elif [[ "$engine" == "opengauss" ]]; then
+    db_conn="host=localhost port=7654 dbname=imdb user=imdb password=imdb_132"
+
 else
     echo "Unknown engine: $engine"
     exit 1
@@ -87,12 +90,24 @@ mariadb_stop() {
     sudo systemctl stop mariadb
 }
 
+########################################
+# Start / Stop OpenGauss
+########################################
+opengauss_start() {
+    sudo systemctl start opengauss
+}
+
+opengauss_stop() {
+    sudo systemctl stop opengauss
+}
 
 cleanup() {
     if [[ "$engine" == "umbra" ]]; then
         stop_umbra
     elif [[ "$engine" == "mariadb" ]]; then
         mariadb_stop
+    elif [[ "$engine" == "opengauss" ]]; then
+        opengauss_stop
     else
 	      pg_stop
     fi
@@ -130,6 +145,8 @@ if [[ "$engine" == "umbra" ]]; then
     start_umbra
 elif [[ "$engine" == "mariadb" ]]; then
     mariadb_start
+elif [[ "$engine" == "opengauss" ]]; then
+    opengauss_start
 else
     pg_start
 fi
@@ -144,6 +161,8 @@ elif [[ "$engine" == "mariadb" ]]; then
     mariadb -u imdb -D imdb < /home/pei/Project/benchmarks/imdb_job-postgres/analyze_mariadb_table.sql
 elif [[ "$engine" == "postgres" ]]; then
     psql -U pei -d imdb -c "ANALYZE;"
+elif [[ "$engine" == "opengauss" ]]; then
+    sudo -i -u opengauss gsql -d imdb -U imdb --host=localhost -p 7654 -W imdb_132 -c "ANALYZE;"
 fi
 echo "ANALYZE done"
 
@@ -151,10 +170,15 @@ echo "ANALYZE done"
 # Run benchmark
 ########################################
 start=$(date +%s%N)
+cmd_prefix=""
+if [[ "$engine" == "opengauss" ]]; then
+    cmd_prefix="env LD_LIBRARY_PATH=$HOME/gauss_compat_libs"
+fi
+
 for sql in "$dir"/*.sql; do
     echo "Running benchmark for $sql..." | tee -a "$log_name"
 
-    ../build/aqp_middleware \
+    $cmd_prefix ../build/aqp_middleware \
         --engine="${engine}" \
         --db="${db_conn}" \
         "${helper_db_arg}" \
