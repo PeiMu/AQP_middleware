@@ -85,8 +85,12 @@ umbra-server --address 0.0.0.0 /var/db/imdb.db
 ```
 
 #### OpenGauss
+We installed OpenGauss by `sudo apt install opengauss`, making it rely on some libs, e.g., `lib*_gauss.*` and `libpq.so.5.5`. But the PostgreSQL's libpq version we used is `libpq.so.5.12`.
+To separate the libpq library from PostgreSQL to OpenGauss, we move the OpenGauss-related libraries to a separate directory, e.g., `$HOME/gauss_compat_libs`.
+Then we need to add it to the `LD_LIBRARY_PATH`.
+
 ```bash
-./build_release/aqp_middleware \
+env LD_LIBRARY_PATH=$HOME/gauss_compat_libs ./build_release/aqp_middleware \
 --engine=opengauss \
 --db="host=localhost port=7654 dbname=imdb user=imdb password=imdb_132" \
 --schema=/home/pei/Project/benchmarks/imdb_job-postgres/schema.sql \
