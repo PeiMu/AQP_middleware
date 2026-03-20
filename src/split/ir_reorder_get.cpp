@@ -11,8 +11,8 @@
 
 namespace middleware {
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
-IRReorderGet::Reorder(std::unique_ptr<ir_sql_converter::SimplestStmt> ir) {
+std::unique_ptr<ir_sql_converter::AQPStmt>
+IRReorderGet::Reorder(std::unique_ptr<ir_sql_converter::AQPStmt> ir) {
 #ifndef NDEBUG
   std::cout << "[IRReorderGet] Starting table reordering by cardinality"
             << std::endl;
@@ -92,7 +92,7 @@ IRReorderGet::Reorder(std::unique_ptr<ir_sql_converter::SimplestStmt> ir) {
   return rebuilt_tree;
 }
 
-void IRReorderGet::CollectTableScans(ir_sql_converter::SimplestStmt *node,
+void IRReorderGet::CollectTableScans(ir_sql_converter::AQPStmt *node,
                                      std::vector<TableInfo> &tables) {
   if (!node)
     return;
@@ -125,7 +125,7 @@ void IRReorderGet::CollectTableScans(ir_sql_converter::SimplestStmt *node,
 }
 
 void IRReorderGet::CollectJoinConditions(
-    ir_sql_converter::SimplestStmt *node,
+    ir_sql_converter::AQPStmt *node,
     std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
         &join_conds) {
   if (!node)
@@ -155,7 +155,7 @@ void IRReorderGet::CollectJoinConditions(
   }
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt> IRReorderGet::RebuildJoinTree(
+std::unique_ptr<ir_sql_converter::AQPStmt> IRReorderGet::RebuildJoinTree(
     std::vector<TableInfo> &sorted_tables,
     std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
         &join_conditions) {
@@ -181,7 +181,7 @@ std::unique_ptr<ir_sql_converter::SimplestStmt> IRReorderGet::RebuildJoinTree(
 
   // Build left-deep join tree: smallest table at the bottom
   // Pattern: ((T1 JOIN T2) JOIN T3) JOIN T4
-  std::unique_ptr<ir_sql_converter::SimplestStmt> current_tree = nullptr;
+  std::unique_ptr<ir_sql_converter::AQPStmt> current_tree = nullptr;
   std::set<unsigned int> joined_tables;
 
   for (size_t i = 0; i < sorted_tables.size(); i++) {
@@ -194,9 +194,9 @@ std::unique_ptr<ir_sql_converter::SimplestStmt> IRReorderGet::RebuildJoinTree(
 #endif
 
     // Create scan node for this table
-    std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> empty_children;
+    std::vector<std::unique_ptr<ir_sql_converter::AQPStmt>> empty_children;
     std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> empty_attrs;
-    auto base_stmt = std::make_unique<ir_sql_converter::SimplestStmt>(
+    auto base_stmt = std::make_unique<ir_sql_converter::AQPStmt>(
         std::move(empty_children), std::move(empty_attrs),
         ir_sql_converter::SimplestNodeType::StmtNode);
     auto scan_node = std::make_unique<ir_sql_converter::SimplestScan>(
@@ -229,10 +229,10 @@ std::unique_ptr<ir_sql_converter::SimplestStmt> IRReorderGet::RebuildJoinTree(
       }
     }
 
-    std::vector<std::unique_ptr<ir_sql_converter::SimplestStmt>> join_children;
+    std::vector<std::unique_ptr<ir_sql_converter::AQPStmt>> join_children;
     join_children.push_back(std::move(current_tree));
     join_children.push_back(std::move(scan_node));
-    base_stmt = std::make_unique<ir_sql_converter::SimplestStmt>(
+    base_stmt = std::make_unique<ir_sql_converter::AQPStmt>(
         std::move(join_children),
         std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>(),
         ir_sql_converter::SimplestNodeType::StmtNode);
@@ -272,10 +272,10 @@ std::unique_ptr<ir_sql_converter::SimplestStmt> IRReorderGet::RebuildJoinTree(
   return current_tree;
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 IRReorderGet::PreserveTopOperators(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> original_ir,
-    std::unique_ptr<ir_sql_converter::SimplestStmt> reordered_join_tree) {
+    std::unique_ptr<ir_sql_converter::AQPStmt> original_ir,
+    std::unique_ptr<ir_sql_converter::AQPStmt> reordered_join_tree) {
 
   std::cout << "[IRReorderGet] Preserving top-level operators" << std::endl;
 
@@ -284,10 +284,10 @@ IRReorderGet::PreserveTopOperators(
                             std::move(reordered_join_tree));
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 IRReorderGet::ReplaceJoinSubtree(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> node,
-    std::unique_ptr<ir_sql_converter::SimplestStmt> new_subtree) {
+    std::unique_ptr<ir_sql_converter::AQPStmt> node,
+    std::unique_ptr<ir_sql_converter::AQPStmt> new_subtree) {
 
   if (!node) {
     return new_subtree;

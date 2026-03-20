@@ -39,7 +39,7 @@
 using namespace middleware;
 
 // Factory function to create the appropriate adapter based on config
-std::unique_ptr<DBAdapter> CreateAdapter(const ParamConfig &config) {
+std::unique_ptr<EngineAdapter> CreateAdapter(const ParamConfig &config) {
   switch (config.engine) {
 #if defined(HAVE_DUCKDB)
   case BackendEngine::DUCKDB: {
@@ -120,7 +120,7 @@ std::string ReadSQLFile(const std::string &file_path) {
 }
 
 // Execute single query with timing and result collection
-void ExecuteSingleQuery(DBAdapter *adapter, const std::string &sql_file_path,
+void ExecuteSingleQuery(EngineAdapter *adapter, const std::string &sql_file_path,
                         const ParamConfig &config, TestResult &result) {
   result.query_file = get_filename(sql_file_path);
   result.success = false;
@@ -211,7 +211,7 @@ void ExecuteSingleQuery(DBAdapter *adapter, const std::string &sql_file_path,
 }
 
 // Run benchmark on all queries in a directory
-int RunBenchmark(DBAdapter *adapter, const ParamConfig &config) {
+int RunBenchmark(EngineAdapter *adapter, const ParamConfig &config) {
   std::cout << "\n========================================" << std::endl;
   std::cout << "Running Benchmark: " << config.query_path << std::endl;
   std::cout << "========================================" << std::endl;

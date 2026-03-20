@@ -48,7 +48,7 @@ void PostgreSQLAdapter::ParseSQL(const std::string &sql) {
   pg_query_free_parse_result(result);
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 PostgreSQLAdapter::ConvertPlanToIR() {
   if (parse_tree.empty()) {
     throw std::runtime_error("No parse tree available. Call ParseSQL first.");
@@ -56,7 +56,7 @@ PostgreSQLAdapter::ConvertPlanToIR() {
 
   // Use schema-aware conversion if global schema parser is initialized,
   // otherwise fall back to basic conversion (column indices will be 0)
-  std::unique_ptr<ir_sql_converter::SimplestStmt> stmt =
+  std::unique_ptr<ir_sql_converter::AQPStmt> stmt =
       ir_sql_converter::ConvertParseTreeToIRWithSchema(parse_tree,
                                                        subquery_index);
   return std::move(stmt);

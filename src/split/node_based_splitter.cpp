@@ -11,16 +11,16 @@
 
 namespace middleware {
 
-NodeBasedSplitter::NodeBasedSplitter(DBAdapter *exec_adapter,
+NodeBasedSplitter::NodeBasedSplitter(EngineAdapter *exec_adapter,
                                      DuckDBAdapter *plan_adapter,
                                      bool enable_debug_print)
-    : SplitAlgorithm(exec_adapter), plan_adapter_(plan_adapter),
+    : AQPSplitter(exec_adapter), plan_adapter_(plan_adapter),
       external_execution_(exec_adapter !=
-                          static_cast<DBAdapter *>(plan_adapter)),
+                          static_cast<EngineAdapter *>(plan_adapter)),
       enable_debug_print_(enable_debug_print) {}
 
 void NodeBasedSplitter::Preprocess(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> & /*ir*/) {
+    std::unique_ptr<ir_sql_converter::AQPStmt> & /*ir*/) {
   ctx_ = plan_adapter_->GetClientContext();
 
   // Take ownership of the already-FilterOptimized plan.
@@ -55,18 +55,18 @@ void NodeBasedSplitter::RunMiddleOptimize() {
     ctx_->transaction.Commit();
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 NodeBasedSplitter::TakePlanAsIR() {
   plan_adapter_->SetPlan(std::move(plan_));
   return plan_adapter_->ConvertPlanToIR();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ExtractNextSubquery
+// SplitIR
 // Runs BLOCK 1 + BLOCK 2 then either signals terminal or extracts a sub-plan.
 // ─────────────────────────────────────────────────────────────────────────────
-std::unique_ptr<SubqueryExtraction> NodeBasedSplitter::ExtractNextSubquery(
-    ir_sql_converter::SimplestStmt * /*remaining_ir*/) {
+std::unique_ptr<SubqueryExtraction> NodeBasedSplitter::SplitIR(
+    ir_sql_converter::AQPStmt * /*remaining_ir*/) {
 
   // ── BLOCK 1 (ALWAYS_SPLIT=true: runs every iteration except the first) ──
   // Merge pending subqueries (from the previous UpdateRemainingIR) back into
@@ -98,7 +98,7 @@ std::unique_ptr<SubqueryExtraction> NodeBasedSplitter::ExtractNextSubquery(
   proj_expr_ = qs_->GetProjExpr();
 
   if (enable_debug_print_)
-    std::cout << "[NodeBased] ExtractNextSubquery: subquery groups="
+    std::cout << "[NodeBased] SplitIR: subquery groups="
               << subqueries_.size() << "\n";
 
   // ── Early terminal: nothing left to split ───────────────────────────────
@@ -165,7 +165,7 @@ std::unique_ptr<SubqueryExtraction> NodeBasedSplitter::ExtractNextSubquery(
 }
 
 bool NodeBasedSplitter::IsComplete(
-    const ir_sql_converter::SimplestStmt * /*remaining_ir*/) {
+    const ir_sql_converter::AQPStmt * /*remaining_ir*/) {
   return terminal_;
 }
 
@@ -175,9 +175,9 @@ bool NodeBasedSplitter::IsComplete(
 // temp table created.  Inserts a CHUNK_GET node and advances split state.
 // Returns the final plan IR when late-terminal, nullptr otherwise.
 // ─────────────────────────────────────────────────────────────────────────────
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 NodeBasedSplitter::UpdateRemainingIR(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> remaining_ir,
+    std::unique_ptr<ir_sql_converter::AQPStmt> remaining_ir,
     const std::set<unsigned int> & /*executed_table_indices*/,
     unsigned int /*temp_table_index*/, const std::string &temp_table_name,
     uint64_t temp_table_cardinality,
@@ -241,6 +241,14 @@ NodeBasedSplitter::UpdateRemainingIR(
   // Not terminal yet; remaining_ir is irrelevant for NodeBased but must be
   // returned so the caller can pass it to the next IsComplete / Extract call.
   return remaining_ir;
+}
+
+ir_sql_converter::AQPStmt *NodeBasedSplitter::SelectSubIR(
+    ir_sql_converter::AQPStmt *ir,
+    const std::set<unsigned int> & /*cluster_tables*/) {
+  // NodeBased selection is driven by DuckDB's subqueries_.front();
+  // the full remaining IR represents the sub-IR for the current cluster.
+  return ir;
 }
 
 } // namespace middleware

@@ -61,7 +61,7 @@ private:
 
 class ForeignKeyExtractor {
 public:
-  explicit ForeignKeyExtractor(DBAdapter *adapter, BackendEngine engine,
+  explicit ForeignKeyExtractor(EngineAdapter *adapter, BackendEngine engine,
                                const std::string &fkeys_path = "")
       : adapter_(adapter), engine_(engine), fkeys_path_(fkeys_path) {}
 
@@ -86,7 +86,7 @@ private:
   std::vector<ForeignKey>
   ExtractFromFile(const std::set<std::string> &table_names);
 
-  DBAdapter *adapter_;
+  EngineAdapter *adapter_;
   BackendEngine engine_;
   std::string fkeys_path_;
 };

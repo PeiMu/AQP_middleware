@@ -10,7 +10,7 @@
 
 namespace middleware {
 
-IRQuerySplitter::IRQuerySplitter(DBAdapter *adapter, const ParamConfig &config)
+IRQuerySplitter::IRQuerySplitter(EngineAdapter *adapter, const ParamConfig &config)
     : adapter_(adapter), config_(config) {
 
   if (config_.enable_debug_print) {
@@ -144,7 +144,7 @@ QueryResult IRQuerySplitter::ExecuteWithSplit(const std::string &sql) {
   if (config_.enable_debug_print) {
     std::cout << "[IRQuerySplitter] Phase 3: Converting to IR" << std::endl;
   }
-  std::unique_ptr<ir_sql_converter::SimplestStmt> whole_ir;
+  std::unique_ptr<ir_sql_converter::AQPStmt> whole_ir;
 #ifdef HAVE_DUCKDB
   if (config_.strategy != SplitStrategy::NODE_BASED) {
 #endif
@@ -190,10 +190,10 @@ QueryResult IRQuerySplitter::ExecuteWithSplit(const std::string &sql) {
 }
 
 QueryResult IRQuerySplitter::ExecuteSplitLoop(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> whole_ir) {
+    std::unique_ptr<ir_sql_converter::AQPStmt> whole_ir) {
 
   iteration_count_ = 0;
-  std::unique_ptr<ir_sql_converter::SimplestStmt> remaining_ir =
+  std::unique_ptr<ir_sql_converter::AQPStmt> remaining_ir =
       std::move(whole_ir);
 
   // === Strategy Preprocessing ===
@@ -327,7 +327,7 @@ QueryResult IRQuerySplitter::ExecuteSplitLoop(
 }
 
 bool IRQuerySplitter::ExecuteOneIteration(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> &remaining_ir) {
+    std::unique_ptr<ir_sql_converter::AQPStmt> &remaining_ir) {
 
   // === Step 1: Extract Next Subquery ===
   if (config_.enable_debug_print) {
@@ -339,7 +339,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
   if (config_.enable_timing)
     timer = chrono_tic();
   // todo: potential optimization - Push Partial Aggregation into Sub-IR
-  auto extraction = splitter_->ExtractNextSubquery(remaining_ir.get());
+  auto extraction = splitter_->SplitIR(remaining_ir.get());
   if (config_.enable_timing) {
     auto extract_next_sub_sql_time =
         chrono_toc(&timer, "Extract next sub-SQL time is\n", false);
@@ -379,7 +379,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
               << "] Step 2: Executing sub-IR" << std::endl;
   }
 
-  ir_sql_converter::SimplestStmt *executable_ir = extraction->GetExecutableIR();
+  ir_sql_converter::AQPStmt *executable_ir = extraction->GetExecutableIR();
 
   if (!executable_ir) {
     std::cerr << "[Iteration " << iteration_count_
@@ -440,7 +440,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
     // cardinality for A/B testing
     // fixme: might be a bug where the node-based/top-down split didn't call
     //  BatchGetEstimatedCosts maybe need to collect the card before
-    //  ExtractNextSubquery by calling BatchGetEstimatedCosts
+    //  SplitIR by calling BatchGetEstimatedCosts
     cardinality = static_cast<uint64_t>(extraction->estimated_rows);
     // Override the engine's internal stats so subsequent EXPLAIN queries
     // also use the estimated cardinality instead of the real one
@@ -528,7 +528,7 @@ bool IRQuerySplitter::ExecuteOneIteration(
 }
 
 TempTableInfo IRQuerySplitter::ExecuteSubIR(
-    std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir,
+    std::unique_ptr<ir_sql_converter::AQPStmt> sub_ir,
     const std::set<unsigned int> &executed_table_indices) {
 
   std::string temp_table_name = GenerateTempTableName();
@@ -551,7 +551,7 @@ std::string IRQuerySplitter::GenerateTempTableName() {
 }
 
 std::string
-IRQuerySplitter::GetTrivialTempTable(ir_sql_converter::SimplestStmt *ir) const {
+IRQuerySplitter::GetTrivialTempTable(ir_sql_converter::AQPStmt *ir) const {
   if (!ir) {
     return "";
   }
@@ -586,7 +586,7 @@ IRQuerySplitter::GetTrivialTempTable(ir_sql_converter::SimplestStmt *ir) const {
 // ===== Shared Index Update Functions =====
 
 void IRQuerySplitter::UpdateExprIndices(
-    ir_sql_converter::SimplestExpr *expr, const TempTableInfo &temp_table,
+    ir_sql_converter::AQPExpr *expr, const TempTableInfo &temp_table,
     const std::set<unsigned int> &old_table_indices) {
 
   if (!expr) {
@@ -725,7 +725,7 @@ IRQuerySplitter::UpdateAttrIndices(
 }
 
 void IRQuerySplitter::UpdateNodeIndices(
-    ir_sql_converter::SimplestStmt *node, const TempTableInfo &temp_table,
+    ir_sql_converter::AQPStmt *node, const TempTableInfo &temp_table,
     const std::set<unsigned int> &old_table_indices) {
 
   if (!node) {
@@ -828,7 +828,7 @@ void IRQuerySplitter::UpdateNodeIndices(
 }
 
 void IRQuerySplitter::UpdateRemainingIRIndices(
-    ir_sql_converter::SimplestStmt *remaining_ir,
+    ir_sql_converter::AQPStmt *remaining_ir,
     const TempTableInfo &temp_table,
     const std::set<unsigned int> &old_table_indices) {
 

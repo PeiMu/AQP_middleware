@@ -7,6 +7,7 @@
 
 #include "simplest_ir.h"
 #include "split/foreign_key_extractor.h"
+#include "split/select_sub_ir.h"
 #include "split/split_algorithm.h"
 #include "util/param_config.h"
 #include <map>
@@ -96,27 +97,27 @@ private:
 };
 
 // Base class for FK-based splitting strategies
-class FKBasedSplitter : public SplitAlgorithm {
+class FKBasedSplitter : public AQPSplitter, public AQPSelector {
 public:
-  FKBasedSplitter(DBAdapter *adapter, BackendEngine engine,
+  FKBasedSplitter(EngineAdapter *adapter, BackendEngine engine,
                   SplitStrategy strategy, bool enable_analyze,
                   const std::string &fkeys_path = "")
-      : SplitAlgorithm(adapter), engine_(engine), strategy_(strategy),
+      : AQPSplitter(adapter), engine_(engine), strategy_(strategy),
         enable_analyze_(enable_analyze),
         fk_extractor_(adapter, engine, fkeys_path) {}
 
-  void Preprocess(std::unique_ptr<ir_sql_converter::SimplestStmt> &ir) override;
+  void Preprocess(std::unique_ptr<ir_sql_converter::AQPStmt> &ir) override;
 
-  bool IsComplete(const ir_sql_converter::SimplestStmt *remaining_ir) override;
+  bool IsComplete(const ir_sql_converter::AQPStmt *remaining_ir) override;
 
 protected:
   // Build join graph from IR and FK information (implements PostgreSQL's
   // List2Graph)
-  void BuildJoinGraph(const ir_sql_converter::SimplestStmt *ir);
+  void BuildJoinGraph(const ir_sql_converter::AQPStmt *ir);
 
   // Collect join conditions from IR - returns pairs of (table1_idx, table2_idx)
   std::vector<std::pair<unsigned int, unsigned int>>
-  CollectJoinConditions(const ir_sql_converter::SimplestStmt *ir);
+  CollectJoinConditions(const ir_sql_converter::AQPStmt *ir);
 
   // Mark entity vs relationship tables based on FK
   // Referenced tables = entities (is_relationship[i] = false)
@@ -124,10 +125,6 @@ protected:
   std::vector<bool>
   MarkEntityRelationship(const ForeignKeyGraph &fk_graph,
                          const std::map<unsigned int, std::string> &tables);
-
-  // Helper to collect table indices from a node
-  std::set<unsigned int>
-  CollectTableIndices(const ir_sql_converter::SimplestStmt *node) const;
 
   // Check if a join between two tables is a FK join
   bool IsFKJoin(unsigned int table1, unsigned int table2) const;
@@ -140,57 +137,49 @@ protected:
   // Generate SQL for a cluster of tables (for cost estimation)
   // Returns empty string if generation fails
   std::string GenerateSQLForCluster(const std::vector<int> &cluster,
-                                    ir_sql_converter::SimplestStmt *ir);
+                                    ir_sql_converter::AQPStmt *ir);
 
   // Get estimated cost for a cluster using adapter's EXPLAIN
   // Returns {cost, rows}
   std::pair<double, double> GetClusterCost(const std::vector<int> &cluster,
-                                           ir_sql_converter::SimplestStmt *ir);
+                                           ir_sql_converter::AQPStmt *ir);
 
   // Batch-evaluate costs for multiple clusters in one round-trip
   // Checks cache first, then batches all cache misses via
   // BatchGetEstimatedCosts
-  void
-  BatchEvaluateClusterCosts(const std::vector<std::vector<int>> &clusters,
-                            ir_sql_converter::SimplestStmt *ir,
-                            std::vector<std::pair<double, double>> &results);
+  void BatchEvaluateSubIRCosts(
+      const std::vector<std::vector<int>> &clusters,
+      ir_sql_converter::AQPStmt *ir,
+      std::vector<std::pair<double, double>> &results) override;
 
   // Find the sub-IR node that represents the join of the given cluster tables
   // Returns the lowest common ancestor node that contains all cluster tables
-  ir_sql_converter::SimplestStmt *
-  FindSubIRForCluster(ir_sql_converter::SimplestStmt *ir,
-                      const std::set<unsigned int> &cluster_tables);
-
-  // Helper: Check if a node contains all the specified tables (and only those)
-  bool NodeContainsExactlyTables(ir_sql_converter::SimplestStmt *node,
-                                 const std::set<unsigned int> &target_tables);
-
-  // Helper: Check if a node contains any of the specified tables
-  bool NodeContainsAnyTable(ir_sql_converter::SimplestStmt *node,
-                            const std::set<unsigned int> &target_tables);
+  ir_sql_converter::AQPStmt *
+  SelectSubIR(ir_sql_converter::AQPStmt *ir,
+                      const std::set<unsigned int> &cluster_tables) override;
 
   // Build a new sub-IR containing only the specified cluster tables
   // This is equivalent to PostgreSQL's createQuery() function
-  std::unique_ptr<ir_sql_converter::SimplestStmt>
-  BuildSubIRForCluster(ir_sql_converter::SimplestStmt *ir,
+  std::unique_ptr<ir_sql_converter::AQPStmt>
+  BuildSubIRForCluster(ir_sql_converter::AQPStmt *ir,
                        const std::set<unsigned int> &cluster_tables);
 
   // Helper: Collect Scan nodes for specified tables
   std::vector<ir_sql_converter::SimplestScan *>
-  CollectScansForTables(ir_sql_converter::SimplestStmt *ir,
+  CollectScansForTables(ir_sql_converter::AQPStmt *ir,
                         const std::set<unsigned int> &tables);
 
   // Helper: Collect attributes from cluster tables needed for join conditions
   // with tables OUTSIDE the cluster (for the remaining plan's joins)
   // NOTE: This stays in FK-based splitter because it uses join_graph_ member
   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
-  CollectExternalJoinAttrs(ir_sql_converter::SimplestStmt *ir,
+  CollectExternalJoinAttrs(ir_sql_converter::AQPStmt *ir,
                            const std::set<unsigned int> &cluster_tables);
 
   // Move valid join conditions from old IR, filtering out FK-FK joins
   // Classifies into internal (both remaining) and cross-boundary (one executed)
   void MoveValidJoins(
-      std::unique_ptr<ir_sql_converter::SimplestStmt> &node,
+      std::unique_ptr<ir_sql_converter::AQPStmt> &node,
       const std::set<unsigned int> &remaining_tables,
       const std::set<unsigned int> &executed_table_indices,
       std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
@@ -212,8 +201,8 @@ protected:
   // Update remaining IR by rebuilding (PostgreSQL style)
   // Because cluster tables may be scattered throughout the tree
   // Takes ownership of old IR to move expressions instead of cloning
-  std::unique_ptr<ir_sql_converter::SimplestStmt> UpdateRemainingIR(
-      std::unique_ptr<ir_sql_converter::SimplestStmt> remaining_ir,
+  std::unique_ptr<ir_sql_converter::AQPStmt> UpdateRemainingIR(
+      std::unique_ptr<ir_sql_converter::AQPStmt> remaining_ir,
       const std::set<unsigned int> &executed_table_indices,
       unsigned int temp_table_index, const std::string &temp_table_name,
       uint64_t temp_table_cardinality,
@@ -243,20 +232,20 @@ protected:
 // Finds pairs of tables to join (smallest possible subqueries)
 class MinSubquerySplitter : public FKBasedSplitter {
 public:
-  MinSubquerySplitter(DBAdapter *adapter, BackendEngine engine,
+  MinSubquerySplitter(EngineAdapter *adapter, BackendEngine engine,
                       bool enable_analyze, const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::MIN_SUBQUERY,
                         enable_analyze, fkeys_path) {}
 
   std::unique_ptr<SubqueryExtraction>
-  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
+  SplitIR(ir_sql_converter::AQPStmt *remaining_ir) override;
 
   std::string GetStrategyName() const override { return "MinSubquery"; }
 
 private:
   // Find next pair of tables that have a join edge (cost-based selection)
   // estimated_rows: output parameter for the optimizer's estimated row count
-  std::pair<int, int> FindNextPair(ir_sql_converter::SimplestStmt *ir,
+  std::pair<int, int> FindNextPair(ir_sql_converter::AQPStmt *ir,
                                    double &estimated_rows);
 };
 
@@ -264,14 +253,14 @@ private:
 // Joins relationship tables with all connected entity tables
 class RelationshipCenterSplitter : public FKBasedSplitter {
 public:
-  RelationshipCenterSplitter(DBAdapter *adapter, BackendEngine engine,
+  RelationshipCenterSplitter(EngineAdapter *adapter, BackendEngine engine,
                              bool enable_analyze,
                              const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::RELATIONSHIP_CENTER,
                         enable_analyze, fkeys_path) {}
 
   std::unique_ptr<SubqueryExtraction>
-  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
+  SplitIR(ir_sql_converter::AQPStmt *remaining_ir) override;
 
   std::string GetStrategyName() const override { return "RelationshipCenter"; }
 
@@ -279,7 +268,7 @@ private:
   // Find next relationship table and its connected entities (cost-based
   // selection)
   // estimated_rows: output parameter for the optimizer's estimated row count
-  std::vector<int> FindRelationshipCluster(ir_sql_converter::SimplestStmt *ir,
+  std::vector<int> FindRelationshipCluster(ir_sql_converter::AQPStmt *ir,
                                            double &estimated_rows);
 };
 
@@ -287,13 +276,13 @@ private:
 // Joins entity tables with all connected relationship tables
 class EntityCenterSplitter : public FKBasedSplitter {
 public:
-  EntityCenterSplitter(DBAdapter *adapter, BackendEngine engine,
+  EntityCenterSplitter(EngineAdapter *adapter, BackendEngine engine,
                        bool enable_analyze, const std::string &fkeys_path = "")
       : FKBasedSplitter(adapter, engine, SplitStrategy::ENTITY_CENTER,
                         enable_analyze, fkeys_path) {}
 
   std::unique_ptr<SubqueryExtraction>
-  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) override;
+  SplitIR(ir_sql_converter::AQPStmt *remaining_ir) override;
 
   std::string GetStrategyName() const override { return "EntityCenter"; }
 
@@ -301,7 +290,7 @@ private:
   // Find next entity table and its connected relationships (cost-based
   // selection)
   // estimated_rows: output parameter for the optimizer's estimated row count
-  std::vector<int> FindEntityCluster(ir_sql_converter::SimplestStmt *ir,
+  std::vector<int> FindEntityCluster(ir_sql_converter::AQPStmt *ir,
                                      double &estimated_rows);
 };
 

@@ -11,6 +11,7 @@ add_library(split_lib STATIC
         src/split/ir_reorder_get.cpp
         src/split/ir_utils.cpp
         src/split/foreign_key_extractor.cpp
+        src/split/select_sub_ir.cpp
         src/split/fk_based_splitter.cpp
         src/split/topdown_splitter.cpp
         src/split/node_based_splitter.cpp

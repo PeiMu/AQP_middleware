@@ -29,7 +29,7 @@
 using json = nlohmann::json;
 
 namespace middleware {
-class MariaDBAdapter : public DBAdapter {
+class MariaDBAdapter : public EngineAdapter {
 public:
   // connection_string: MariaDB connection ("host=... dbname=... user=...")
   // estimator_connection: optional PostgreSQL connection for cost estimation;
@@ -44,7 +44,7 @@ public:
   json GetParseTree() { return parse_tree_; }
 
   // Convert logical plan to IR
-  std::unique_ptr<ir_sql_converter::SimplestStmt> ConvertPlanToIR() override;
+  std::unique_ptr<ir_sql_converter::AQPStmt> ConvertPlanToIR() override;
 
   // Execute SQL query
   QueryResult ExecuteSQL(const std::string &sql) override;

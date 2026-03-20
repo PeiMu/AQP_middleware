@@ -7,8 +7,8 @@
 namespace middleware {
 namespace ir_utils {
 
-std::unique_ptr<ir_sql_converter::SimplestExpr>
-CloneExpr(const ir_sql_converter::SimplestExpr *expr) {
+std::unique_ptr<ir_sql_converter::AQPExpr>
+CloneExpr(const ir_sql_converter::AQPExpr *expr) {
   if (!expr)
     return nullptr;
 
@@ -77,7 +77,7 @@ CloneExpr(const ir_sql_converter::SimplestExpr *expr) {
   return nullptr;
 }
 
-bool ExprInvolvesOnlyTables(const ir_sql_converter::SimplestExpr *expr,
+bool ExprInvolvesOnlyTables(const ir_sql_converter::AQPExpr *expr,
                             const std::set<unsigned int> &tables) {
   if (!expr)
     return true;
@@ -130,7 +130,7 @@ bool ExprInvolvesOnlyTables(const ir_sql_converter::SimplestExpr *expr,
 }
 
 void CollectAttrsFromExpr(
-    const ir_sql_converter::SimplestExpr *expr,
+    const ir_sql_converter::AQPExpr *expr,
     const std::set<unsigned int> &target_tables,
     std::set<std::pair<unsigned int, unsigned int>> &seen,
     std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> &attrs) {
@@ -207,8 +207,8 @@ void CollectAttrsFromExpr(
 
 // ===== AND-Splitting for Filter Conditions =====
 
-std::unique_ptr<ir_sql_converter::SimplestExpr>
-ExtractConjunctsForTables(const ir_sql_converter::SimplestExpr *expr,
+std::unique_ptr<ir_sql_converter::AQPExpr>
+ExtractConjunctsForTables(const ir_sql_converter::AQPExpr *expr,
                           const std::set<unsigned int> &tables) {
   if (!expr)
     return nullptr;
@@ -264,10 +264,10 @@ ExtractConjunctsForTables(const ir_sql_converter::SimplestExpr *expr,
 
 // ===== Collection Functions =====
 
-std::vector<std::unique_ptr<ir_sql_converter::SimplestExpr>>
-CollectFilterConditions(ir_sql_converter::SimplestStmt *ir,
+std::vector<std::unique_ptr<ir_sql_converter::AQPExpr>>
+CollectFilterConditions(ir_sql_converter::AQPStmt *ir,
                         const std::set<unsigned int> &tables) {
-  std::vector<std::unique_ptr<ir_sql_converter::SimplestExpr>> filters;
+  std::vector<std::unique_ptr<ir_sql_converter::AQPExpr>> filters;
 
   if (!ir)
     return filters;
@@ -293,7 +293,7 @@ CollectFilterConditions(ir_sql_converter::SimplestStmt *ir,
 }
 
 std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
-CollectJoinConditions(ir_sql_converter::SimplestStmt *ir,
+CollectJoinConditions(ir_sql_converter::AQPStmt *ir,
                       const std::set<unsigned int> &tables) {
   std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
       conditions;
@@ -332,7 +332,7 @@ CollectJoinConditions(ir_sql_converter::SimplestStmt *ir,
 }
 
 std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
-CollectFilterAttrs(ir_sql_converter::SimplestStmt *ir,
+CollectFilterAttrs(ir_sql_converter::AQPStmt *ir,
                    const std::set<unsigned int> &tables) {
   std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> attrs;
   std::set<std::pair<unsigned int, unsigned int>> seen;

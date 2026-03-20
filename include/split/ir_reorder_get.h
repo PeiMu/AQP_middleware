@@ -16,11 +16,11 @@ namespace middleware {
 
 class IRReorderGet {
 public:
-  explicit IRReorderGet(DBAdapter *adapter) : adapter_(adapter) {}
+  explicit IRReorderGet(EngineAdapter *adapter) : adapter_(adapter) {}
 
   // Reorder tables in IR by cardinality (smallest first)
-  std::unique_ptr<ir_sql_converter::SimplestStmt>
-  Reorder(std::unique_ptr<ir_sql_converter::SimplestStmt> ir);
+  std::unique_ptr<ir_sql_converter::AQPStmt>
+  Reorder(std::unique_ptr<ir_sql_converter::AQPStmt> ir);
 
 private:
   struct TableInfo {
@@ -36,7 +36,7 @@ private:
   };
 
   // Collect all table scans from IR tree
-  void CollectTableScans(ir_sql_converter::SimplestStmt *node,
+  void CollectTableScans(ir_sql_converter::AQPStmt *node,
                          std::vector<TableInfo> &tables);
 
   // Get cardinality estimate from adapter
@@ -44,12 +44,12 @@ private:
 
   // Collect all join conditions from JOIN nodes
   void CollectJoinConditions(
-      ir_sql_converter::SimplestStmt *node,
+      ir_sql_converter::AQPStmt *node,
       std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
           &join_conds);
 
   // Rebuild join tree with tables ordered by cardinality
-  std::unique_ptr<ir_sql_converter::SimplestStmt> RebuildJoinTree(
+  std::unique_ptr<ir_sql_converter::AQPStmt> RebuildJoinTree(
       std::vector<TableInfo> &sorted_tables,
       std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
           &join_conditions);
@@ -61,19 +61,19 @@ private:
 
   // Preserve top-level operators (PROJECTION, AGGREGATE, etc.)
   // and attach reordered join tree underneath
-  std::unique_ptr<ir_sql_converter::SimplestStmt> PreserveTopOperators(
-      std::unique_ptr<ir_sql_converter::SimplestStmt> original_ir,
-      std::unique_ptr<ir_sql_converter::SimplestStmt> reordered_join_tree);
+  std::unique_ptr<ir_sql_converter::AQPStmt> PreserveTopOperators(
+      std::unique_ptr<ir_sql_converter::AQPStmt> original_ir,
+      std::unique_ptr<ir_sql_converter::AQPStmt> reordered_join_tree);
 
   // Recursively find and replace the join subtree
-  std::unique_ptr<ir_sql_converter::SimplestStmt> ReplaceJoinSubtree(
-      std::unique_ptr<ir_sql_converter::SimplestStmt> node,
-      std::unique_ptr<ir_sql_converter::SimplestStmt> new_subtree);
+  std::unique_ptr<ir_sql_converter::AQPStmt> ReplaceJoinSubtree(
+      std::unique_ptr<ir_sql_converter::AQPStmt> node,
+      std::unique_ptr<ir_sql_converter::AQPStmt> new_subtree);
 
   // Helper to get node type name for logging
   std::string GetNodeTypeName(ir_sql_converter::SimplestNodeType type) const;
 
-  DBAdapter *adapter_;
+  EngineAdapter *adapter_;
 };
 
 } // namespace middleware

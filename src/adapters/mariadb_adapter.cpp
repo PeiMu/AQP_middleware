@@ -104,13 +104,13 @@ void MariaDBAdapter::ParseSQL(const std::string &sql) {
   pg_query_free_parse_result(result);
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 MariaDBAdapter::ConvertPlanToIR() {
   if (parse_tree_.empty()) {
     throw std::runtime_error("No parse tree available. Call ParseSQL first.");
   }
 
-  std::unique_ptr<ir_sql_converter::SimplestStmt> stmt =
+  std::unique_ptr<ir_sql_converter::AQPStmt> stmt =
       ir_sql_converter::ConvertParseTreeToIRWithSchema(parse_tree_,
                                                        subquery_index);
   return std::move(stmt);

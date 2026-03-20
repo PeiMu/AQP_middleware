@@ -63,7 +63,7 @@ struct TempTableInfo {
 
 class IRQuerySplitter {
 public:
-  IRQuerySplitter(DBAdapter *adapter, const ParamConfig &config);
+  IRQuerySplitter(EngineAdapter *adapter, const ParamConfig &config);
   ~IRQuerySplitter() = default;
 
   // Main entry: Execute query with optional splitting
@@ -75,22 +75,22 @@ public:
 private:
   // === IR-based Iterative Split-Execute Loop (all strategies) ===
   QueryResult
-  ExecuteSplitLoop(std::unique_ptr<ir_sql_converter::SimplestStmt> whole_ir);
+  ExecuteSplitLoop(std::unique_ptr<ir_sql_converter::AQPStmt> whole_ir);
 
   // Single iteration: extract → execute → update remaining IR
   bool ExecuteOneIteration(
-      std::unique_ptr<ir_sql_converter::SimplestStmt> &remaining_ir);
+      std::unique_ptr<ir_sql_converter::AQPStmt> &remaining_ir);
 
   // Execute a sub-IR and create temp table
   TempTableInfo
-  ExecuteSubIR(std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir,
+  ExecuteSubIR(std::unique_ptr<ir_sql_converter::AQPStmt> sub_ir,
                const std::set<unsigned int> &executed_table_indices);
 
   // === Shared Index Update Functions ===
   // Update table/column indices in remaining IR after creating temp table
   // Called after strategy-specific UpdateRemainingIR
   void
-  UpdateRemainingIRIndices(ir_sql_converter::SimplestStmt *remaining_ir,
+  UpdateRemainingIRIndices(ir_sql_converter::AQPStmt *remaining_ir,
                            const TempTableInfo &temp_table,
                            const std::set<unsigned int> &old_table_indices);
 
@@ -101,12 +101,12 @@ private:
                     const std::set<unsigned int> &old_table_indices);
 
   // Helper: Recursively update all attributes in an IR node
-  void UpdateNodeIndices(ir_sql_converter::SimplestStmt *node,
+  void UpdateNodeIndices(ir_sql_converter::AQPStmt *node,
                          const TempTableInfo &temp_table,
                          const std::set<unsigned int> &old_table_indices);
 
   // Helper: Recursively update attributes in an expression tree
-  void UpdateExprIndices(ir_sql_converter::SimplestExpr *expr,
+  void UpdateExprIndices(ir_sql_converter::AQPExpr *expr,
                          const TempTableInfo &temp_table,
                          const std::set<unsigned int> &old_table_indices);
 
@@ -114,9 +114,9 @@ private:
   std::string GenerateTempTableName();
 
   // Check if remaining IR is trivial (just a temp table reference)
-  std::string GetTrivialTempTable(ir_sql_converter::SimplestStmt *ir) const;
+  std::string GetTrivialTempTable(ir_sql_converter::AQPStmt *ir) const;
 
-  DBAdapter *adapter_;
+  EngineAdapter *adapter_;
 #ifdef HAVE_DUCKDB
   // Owned helper DuckDB adapter; non-null only when engine != DUCKDB and
   // strategy == NODE_BASED. Null when engine == DUCKDB (adapter_ is the DuckDB
@@ -127,7 +127,7 @@ private:
   DuckDBAdapter *duckdb_adapter_ = nullptr;
 #endif
   ParamConfig config_;
-  std::unique_ptr<SplitAlgorithm> splitter_;
+  std::unique_ptr<AQPSplitter> splitter_;
 
   // Iteration tracking
   int iteration_count_ = 0;

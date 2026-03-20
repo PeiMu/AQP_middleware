@@ -276,7 +276,7 @@ void *DuckDBAdapter::GetLogicalPlan() {
   return static_cast<void *>(plan.get());
 }
 
-std::unique_ptr<ir_sql_converter::SimplestStmt>
+std::unique_ptr<ir_sql_converter::AQPStmt>
 DuckDBAdapter::ConvertPlanToIR() {
   auto context = GetClientContext();
   auto logical_plan = std::move(plan);

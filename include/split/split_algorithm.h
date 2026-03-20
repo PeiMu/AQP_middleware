@@ -21,7 +21,7 @@ struct SubqueryExtraction {
         temp_table_name(std::move(temp_name)) {}
 
   // Get the IR to execute (prefers sub_ir over pipeline_breaker_ptr)
-  ir_sql_converter::SimplestStmt *GetExecutableIR() const {
+  ir_sql_converter::AQPStmt *GetExecutableIR() const {
     if (sub_ir) {
       return sub_ir.get();
     }
@@ -37,7 +37,7 @@ struct SubqueryExtraction {
   // The built sub-IR for this subquery (owns the IR)
   // For FK-based strategies: NEW sub-IR built from cluster tables (used for
   // execution) For TopDown: typically null (uses pipeline_breaker_ptr instead)
-  std::unique_ptr<ir_sql_converter::SimplestStmt> sub_ir;
+  std::unique_ptr<ir_sql_converter::AQPStmt> sub_ir;
 
   // Optimizer's estimated rows for this subquery (from
   // EXPLAIN/GetEstimatedCost) Used when update_temp_card is disabled to
@@ -48,7 +48,7 @@ struct SubqueryExtraction {
   // table For FK-based strategies: the LCA node containing cluster tables (used
   // for UpdateRemainingIR) For TopDown: points to the subtree for both
   // execution AND replacement
-  ir_sql_converter::SimplestStmt *pipeline_breaker_ptr = nullptr;
+  ir_sql_converter::AQPStmt *pipeline_breaker_ptr = nullptr;
 
   // When true: sub_ir holds the final plan IR ready for direct execution.
   // ExecuteOneIteration sets remaining_ir = sub_ir and stops without running
@@ -57,26 +57,25 @@ struct SubqueryExtraction {
   bool is_final = false;
 };
 
-class SplitAlgorithm {
+class AQPSplitter {
 public:
-  explicit SplitAlgorithm(DBAdapter *adapter) : adapter_(adapter) {}
-  virtual ~SplitAlgorithm() = default;
+  explicit AQPSplitter(EngineAdapter *adapter) : adapter_(adapter) {}
+  virtual ~AQPSplitter() = default;
 
   // Strategy-specific preprocessing (called once before splitting loop)
   // For TopDown: runs IR-level ReorderGet
   // For FK-based: extracts foreign keys
-  virtual void Preprocess(std::unique_ptr<ir_sql_converter::SimplestStmt> &ir) {
-  }
+  virtual void Preprocess(std::unique_ptr<ir_sql_converter::AQPStmt> &ir) = 0;
 
   // Extract next subquery to execute from the remaining IR
   // Returns: SubqueryExtraction with sub-IR and table indices
   // Returns nullptr when no more splits needed
   virtual std::unique_ptr<SubqueryExtraction>
-  ExtractNextSubquery(ir_sql_converter::SimplestStmt *remaining_ir) = 0;
+  SplitIR(ir_sql_converter::AQPStmt *remaining_ir) = 0;
 
   // Check if splitting is complete (typically when only 1 table left)
   virtual bool
-  IsComplete(const ir_sql_converter::SimplestStmt *remaining_ir) = 0;
+  IsComplete(const ir_sql_converter::AQPStmt *remaining_ir) = 0;
 
   // Get strategy name for logging
   virtual std::string GetStrategyName() const = 0;
@@ -90,8 +89,8 @@ public:
   // column_names: computed column names matching SQL generator's convention
   // Takes ownership of remaining_ir to allow moving expressions instead of
   // cloning Returns the updated remaining IR
-  virtual std::unique_ptr<ir_sql_converter::SimplestStmt> UpdateRemainingIR(
-      std::unique_ptr<ir_sql_converter::SimplestStmt> remaining_ir,
+  virtual std::unique_ptr<ir_sql_converter::AQPStmt> UpdateRemainingIR(
+      std::unique_ptr<ir_sql_converter::AQPStmt> remaining_ir,
       const std::set<unsigned int> &executed_table_indices,
       unsigned int temp_table_index, const std::string &temp_table_name,
       uint64_t temp_table_cardinality,
@@ -123,7 +122,7 @@ public:
 
 protected:
   // Collect table names from IR scan nodes (shared by all strategies)
-  void CollectTableNames(const ir_sql_converter::SimplestStmt *ir) {
+  void CollectTableNames(const ir_sql_converter::AQPStmt *ir) {
     if (!ir)
       return;
     if (ir->GetNodeType() == ir_sql_converter::SimplestNodeType::ScanNode) {
@@ -137,7 +136,7 @@ protected:
     }
   }
 
-  DBAdapter *adapter_;
+  EngineAdapter *adapter_;
 
   // Iteration counter
   int split_iteration_ = 0;

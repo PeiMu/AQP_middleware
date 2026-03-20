@@ -28,11 +28,11 @@ CloneAttr(const std::unique_ptr<ir_sql_converter::SimplestAttr> &attr) {
   return CloneAttr(attr.get());
 }
 
-std::unique_ptr<ir_sql_converter::SimplestExpr>
-CloneExpr(const ir_sql_converter::SimplestExpr *expr);
+std::unique_ptr<ir_sql_converter::AQPExpr>
+CloneExpr(const ir_sql_converter::AQPExpr *expr);
 
-inline std::unique_ptr<ir_sql_converter::SimplestExpr>
-CloneExpr(const std::unique_ptr<ir_sql_converter::SimplestExpr> &expr) {
+inline std::unique_ptr<ir_sql_converter::AQPExpr>
+CloneExpr(const std::unique_ptr<ir_sql_converter::AQPExpr> &expr) {
   return CloneExpr(expr.get());
 }
 
@@ -48,11 +48,11 @@ CloneVarComparison(const ir_sql_converter::SimplestVarComparison *cond) {
 // ===== Expression Table Checking =====
 // Check if expression involves only specified tables
 
-bool ExprInvolvesOnlyTables(const ir_sql_converter::SimplestExpr *expr,
+bool ExprInvolvesOnlyTables(const ir_sql_converter::AQPExpr *expr,
                             const std::set<unsigned int> &tables);
 
 inline bool ExprInvolvesOnlyTables(
-    const std::unique_ptr<ir_sql_converter::SimplestExpr> &expr,
+    const std::unique_ptr<ir_sql_converter::AQPExpr> &expr,
     const std::set<unsigned int> &tables) {
   return ExprInvolvesOnlyTables(expr.get(), tables);
 }
@@ -61,7 +61,7 @@ inline bool ExprInvolvesOnlyTables(
 // Collect all attributes referenced in an expression
 
 void CollectAttrsFromExpr(
-    const ir_sql_converter::SimplestExpr *expr,
+    const ir_sql_converter::AQPExpr *expr,
     const std::set<unsigned int> &target_tables,
     std::set<std::pair<unsigned int, unsigned int>> &seen,
     std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>> &attrs);
@@ -72,8 +72,8 @@ void CollectAttrsFromExpr(
 // With tables={1,4}: returns A && C (skips B)
 // For OR expressions: only include if ALL tables are in the set (can't split OR)
 
-std::unique_ptr<ir_sql_converter::SimplestExpr>
-ExtractConjunctsForTables(const ir_sql_converter::SimplestExpr *expr,
+std::unique_ptr<ir_sql_converter::AQPExpr>
+ExtractConjunctsForTables(const ir_sql_converter::AQPExpr *expr,
                           const std::set<unsigned int> &tables);
 
 // ===== Collection Functions for Sub-IR Building =====
@@ -81,18 +81,18 @@ ExtractConjunctsForTables(const ir_sql_converter::SimplestExpr *expr,
 
 // Collect filter conditions from IR tree, extracting conjuncts for specified tables
 // Uses AND-splitting: for AND expressions, extracts only conjuncts involving cluster tables
-std::vector<std::unique_ptr<ir_sql_converter::SimplestExpr>>
-CollectFilterConditions(ir_sql_converter::SimplestStmt *ir,
+std::vector<std::unique_ptr<ir_sql_converter::AQPExpr>>
+CollectFilterConditions(ir_sql_converter::AQPStmt *ir,
                         const std::set<unsigned int> &tables);
 
 // Collect join conditions between specified tables
 std::vector<std::unique_ptr<ir_sql_converter::SimplestVarComparison>>
-CollectJoinConditions(ir_sql_converter::SimplestStmt *ir,
+CollectJoinConditions(ir_sql_converter::AQPStmt *ir,
                       const std::set<unsigned int> &tables);
 
 // Collect attributes from filter expressions for specified tables
 std::vector<std::unique_ptr<ir_sql_converter::SimplestAttr>>
-CollectFilterAttrs(ir_sql_converter::SimplestStmt *ir,
+CollectFilterAttrs(ir_sql_converter::AQPStmt *ir,
                    const std::set<unsigned int> &tables);
 
 } // namespace ir_utils
