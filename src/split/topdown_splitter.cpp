@@ -52,7 +52,7 @@ void TopDownSplitter::Preprocess(
             << ir->Print(true) << std::endl;
 }
 
-void TopDownSplitter::SplitIR(ir_sql_converter::AQPStmt *node) {
+void TopDownSplitter::Visit(ir_sql_converter::AQPStmt *node) {
   if (!node || found_split_node_) {
     return;
   }
@@ -135,7 +135,7 @@ void TopDownSplitter::SplitIR(ir_sql_converter::AQPStmt *node) {
     // By recursing after the decision, top_most_ is already false when
     // children of a JOIN are visited, so pushed-down FILTERs inside the
     // join tree will not be mistakenly picked as split points.
-    SplitIR(child);
+    Visit(child);
 
     // ── STEP 3: Record the split point and stop ───────────────────────────
     if (should_split) {
@@ -143,13 +143,13 @@ void TopDownSplitter::SplitIR(ir_sql_converter::AQPStmt *node) {
       found_split_node_ = child;
       std::cout << "[TopDownSplitter] Added split point #" << query_split_index_
                 << ": " << GetNodeTypeName(child_type) << std::endl;
-      return; // One split per SplitIR call — stop here.
+      return; // One split per Visit call — stop here.
     }
   }
 }
 
-std::unique_ptr<SubqueryExtraction> TopDownSplitter::SplitIR(
-    ir_sql_converter::AQPStmt *remaining_ir) {
+std::unique_ptr<SubqueryExtraction>
+TopDownSplitter::SplitIR(ir_sql_converter::AQPStmt *remaining_ir) {
 
   split_iteration_++;
   std::cout << "\n[TopDownSplitter] Iteration " << split_iteration_
@@ -165,7 +165,7 @@ std::unique_ptr<SubqueryExtraction> TopDownSplitter::SplitIR(
   // TopDownSplit::Clear() which resets the top_most member between iterations.
   found_split_node_ = nullptr;
   top_most_ = true;
-  SplitIR(remaining_ir);
+  Visit(remaining_ir);
 
   // Check if there are more subqueries to execute
   if (!found_split_node_) {
@@ -345,8 +345,7 @@ std::string TopDownSplitter::GetNodeTypeName(
   }
 }
 
-std::unique_ptr<ir_sql_converter::AQPStmt>
-TopDownSplitter::UpdateRemainingIR(
+std::unique_ptr<ir_sql_converter::AQPStmt> TopDownSplitter::UpdateRemainingIR(
     std::unique_ptr<ir_sql_converter::AQPStmt> remaining_ir,
     const std::set<unsigned int> &executed_table_indices,
     unsigned int temp_table_index, const std::string &temp_table_name,
@@ -399,8 +398,7 @@ TopDownSplitter::UpdateRemainingIR(
         }
 
         // Create base AQPStmt for the scan
-        std::vector<std::unique_ptr<ir_sql_converter::AQPStmt>>
-            empty_children;
+        std::vector<std::unique_ptr<ir_sql_converter::AQPStmt>> empty_children;
         auto scan_base = std::make_unique<ir_sql_converter::AQPStmt>(
             std::move(empty_children), std::move(scan_target_list),
             ir_sql_converter::SimplestNodeType::ScanNode);
@@ -502,8 +500,7 @@ TopDownSplitter::CollectRequiredAttrs(
   CollectPlanAttrs(full_ir);
 
   // (c) Cross-boundary join conditions: one attr in subquery, other outside
-  std::function<void(const ir_sql_converter::AQPStmt *)>
-      CollectCrossBoundary;
+  std::function<void(const ir_sql_converter::AQPStmt *)> CollectCrossBoundary;
   CollectCrossBoundary = [&](const ir_sql_converter::AQPStmt *node) {
     if (!node)
       return;
@@ -571,8 +568,7 @@ ir_sql_converter::AQPStmt *TopDownSplitter::WrapInProjection(
         }
 
         // Create the projection wrapping the original split node
-        std::vector<std::unique_ptr<ir_sql_converter::AQPStmt>>
-            proj_children;
+        std::vector<std::unique_ptr<ir_sql_converter::AQPStmt>> proj_children;
         proj_children.push_back(std::move(split_node));
         auto proj_base = std::make_unique<ir_sql_converter::AQPStmt>(
             std::move(proj_children), std::move(proj_tgt),

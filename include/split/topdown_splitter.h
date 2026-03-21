@@ -44,7 +44,7 @@ private:
   // No parameter: top_most_ is a member variable (mirrors DuckDB's top_most
   // member in TopDownSplit), reset to true before each call from
   // SplitIR.
-  void SplitIR(ir_sql_converter::AQPStmt *node);
+  void Visit(ir_sql_converter::AQPStmt *node);
 
   // Collect all table indices in a subtree
   std::set<unsigned int>
